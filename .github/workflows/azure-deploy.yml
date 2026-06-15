@@ -20,5 +20,5 @@ jobs:
       - name: Deploy to Azure Web App (Gemini 3.5 Flash)
         uses: azure/webapps-deploy@v3
         with:
-          app-name: soverdata-gemini35flash
+          app-name: soverdata-gemini-35-flash
           package: .
