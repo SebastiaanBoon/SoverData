@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+__oryx_packages__
+.python_packages
+*.pyc
+examples/demo-workspace/lakehouse
+examples/demo-workspace/runs
+examples/demo-workspace/sales.db
+*.snappy.parquet
+deploy.zip
