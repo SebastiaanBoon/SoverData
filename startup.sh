@@ -1,7 +1,5 @@
 #!/bin/bash
-export PYTHONPATH=/home/site/wwwroot/.python_packages:$PYTHONPATH
-uvicorn server.api.main:app \
-  --host "0.0.0.0" \
-  --port "${PORT:-8000}" \
-  --workers 1 \
-  --timeout-keep-alive 120
+export PYTHONPATH=/home/site/wwwroot/__oryx_packages__:$PYTHONPATH
+export PATH=/home/site/wwwroot/__oryx_packages__/bin:$PATH
+cd /home/site/wwwroot
+exec python -m uvicorn server.api.main:app --host 0.0.0.0 --port 8000 --workers 1
