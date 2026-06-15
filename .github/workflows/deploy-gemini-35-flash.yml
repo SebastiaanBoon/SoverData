@@ -34,4 +34,4 @@ jobs:
             --resource-group cafeboonresourcegroup \
             --src-path deploy.zip \
             --type zip \
-            --async false
+            --async true
