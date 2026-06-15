@@ -1,4 +1,4 @@
-name: Deploy to Azure
+name: Deploy to Azure - Gemini 3.5 Flash
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure Web App
+      - name: Deploy to Azure Web App (Gemini 3.5 Flash)
         uses: azure/webapps-deploy@v3
         with:
           app-name: soverdata-gemini35flash
