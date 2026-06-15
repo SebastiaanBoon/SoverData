@@ -5,6 +5,9 @@ on:
     branches:
       - SoverData-Gemini-3.5-Flash
 
+env:
+  AZURE_WEBAPP_NAME: soverdata-gemini-35-flash
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -17,21 +20,44 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Zip and deploy to Azure Web App
+      - name: Configure Azure app settings
+        run: |
+          az webapp config appsettings set \
+            --resource-group cafeboonresourcegroup \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true WEBSITE_RUN_FROM_PACKAGE=0 SOVERDATA_WORKSPACE=examples/demo-workspace
+          az webapp config set \
+            --resource-group cafeboonresourcegroup \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --startup-file "startup.sh"
+
+      - name: Deploy to Azure Web App
         run: |
           zip -r deploy.zip . \
-            --exclude "*.git*" \
-            --exclude ".venv/*" \
-            --exclude "*.pyc" \
-            --exclude "__pycache__/*" \
-            --exclude "examples/demo-workspace/lakehouse/*" \
-            --exclude "examples/demo-workspace/runs/*" \
-            --exclude "examples/demo-workspace/sales.db" \
-            --exclude "*.parquet" \
-            --exclude "*.snappy.parquet"
+            -x "*.git*" -x "*__pycache__*" -x "*.pyc" \
+            -x ".venv/*" -x "deploy.zip" \
+            -x "examples/demo-workspace/lakehouse/*" \
+            -x "examples/demo-workspace/runs/*" \
+            -x "examples/demo-workspace/sales.db" \
+            -x "*.snappy.parquet"
           az webapp deploy \
-            --name soverdata-gemini-35-flash \
             --resource-group cafeboonresourcegroup \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
             --src-path deploy.zip \
             --type zip \
             --async true
+
+      - name: Wait for app to start
+        run: |
+          URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/workspace"
+          for i in {1..36}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "App is live! (status=$STATUS)"
+              exit 0
+            fi
+            echo "Waiting for app... attempt $i/36 (status=$STATUS)"
+            sleep 10
+          done
+          echo "App did not respond after 6 minutes"
+          exit 1
