@@ -58,7 +58,7 @@ jobs:
           az webapp config set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.APP_NAME }} \
-            --startup-file ""
+            --startup-file "bash /home/site/wwwroot/startup.sh"
           az webapp config container set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.APP_NAME }} \
