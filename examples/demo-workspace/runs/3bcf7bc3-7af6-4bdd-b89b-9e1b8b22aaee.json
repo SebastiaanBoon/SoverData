@@ -1,0 +1,10 @@
+{
+  "run_id": "3bcf7bc3-7af6-4bdd-b89b-9e1b8b22aaee",
+  "pipeline_name": "ingest_sources",
+  "pipeline_type": "python",
+  "status": "success",
+  "started_at": "2026-06-15T09:50:10.941283",
+  "ended_at": "2026-06-15T09:50:12.293612",
+  "duration": 1.352,
+  "error_msg": null
+}

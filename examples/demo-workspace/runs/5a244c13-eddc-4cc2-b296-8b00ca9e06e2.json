@@ -1,0 +1,10 @@
+{
+  "run_id": "5a244c13-eddc-4cc2-b296-8b00ca9e06e2",
+  "pipeline_name": "silver_sales_summary",
+  "pipeline_type": "sql",
+  "status": "success",
+  "started_at": "2026-06-15T09:57:00.407077",
+  "ended_at": "2026-06-15T09:57:00.564485",
+  "duration": 0.157,
+  "error_msg": null
+}

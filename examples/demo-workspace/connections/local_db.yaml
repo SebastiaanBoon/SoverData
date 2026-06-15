@@ -1,0 +1,3 @@
+type: sqlite
+database: sales.db
+description: "SQLite relational database containing mock checkout orders and customer registers."

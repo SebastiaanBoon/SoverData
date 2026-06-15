@@ -1,0 +1,7 @@
+[2026-06-15 09:39:56] Starting pipeline silver_sales_summary (sql) with Run ID fb363ae5-d5eb-447f-bffb-270ac494e8b8
+[2026-06-15 09:39:56] Running SQL against DuckDB Engine. Detected target: silver.sales_summary
+[2026-06-15 09:39:56] ERROR: Pipeline execution failed: Catalog Error: Table with name customers does not exist!
+Did you mean "main.bronze.customers"?
+
+LINE 10: FROM bronze.customers c
+              ^

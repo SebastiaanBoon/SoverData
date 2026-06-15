@@ -1,0 +1,12 @@
+name: demo-workspace
+format_version: "1.0"
+description: "A complete, self-contained Medallion sales analytics project"
+schedules:
+  - pipeline_name: ingest_sources
+    pipeline_type: python
+    interval_seconds: 60
+    enabled: true
+  - pipeline_name: silver_sales_summary
+    pipeline_type: sql
+    interval_seconds: 60
+    enabled: true

@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoverData - Sovereign Data Platform</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4f46e5', // indigo-600
+                        secondary: '#1e1b4b', // indigo-950
+                        accent: '#a5b4fc', // indigo-300
+                        slatebg: '#0f172a', // slate-900
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Vue 3 CDN (using the global build) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        [v-cloak] { display: none; }
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <div id="app" v-cloak class="flex flex-col min-h-screen">
+        <!-- TOP NAVIGATION BAR -->
+        <header class="bg-slate-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600 rounded-lg text-white font-black text-xl tracking-wider">SD</div>
+                <div>
+                    <h1 class="text-lg font-bold text-white leading-tight">SoverData</h1>
+                    <p class="text-xs text-gray-400">Sovereign & Portable Data Platform</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="text-xs text-gray-400 text-right">
+                    <div class="font-semibold text-gray-200">Active Workspace:</div>
+                    <div class="truncate max-w-xs text-indigo-400">{{ workspace.path || 'Loading...' }}</div>
+                </div>
+                <div class="flex space-x-2">
+                    <button @click="activeTab = 'catalog'" :class="tabClass('catalog')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="database" class="w-4 h-4"></i> <span>Catalog</span>
+                    </button>
+                    <button @click="activeTab = 'lineage'; loadLineage()" :class="tabClass('lineage')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="network" class="w-4 h-4"></i> <span>Lineage</span>
+                    </button>
+                    <button @click="activeTab = 'pipelines'" :class="tabClass('pipelines')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="git-branch" class="w-4 h-4"></i> <span>Pipelines</span>
+                    </button>
+                    <button @click="activeTab = 'connections'" :class="tabClass('connections')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="link" class="w-4 h-4"></i> <span>Connections</span>
+                    </button>
+                    <button @click="activeTab = 'runs'" :class="tabClass('runs')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="play-circle" class="w-4 h-4"></i> <span>Runs</span>
+                    </button>
+                    <button @click="activeTab = 'console'" :class="tabClass('console')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="terminal" class="w-4 h-4"></i> <span>SQL Console</span>
+                    </button>
+                    <button @click="activeTab = 'settings'" :class="tabClass('settings')" class="px-3 py-2 rounded text-sm font-medium transition flex items-center space-x-1">
+                        <i data-lucide="settings" class="w-4 h-4"></i> <span>Settings</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN LAYOUT -->
+        <main class="flex-1 flex overflow-hidden">
+            <!-- SIDEBAR DETAILS -->
+            <aside class="w-64 bg-slate-900 border-r border-gray-800 p-4 flex flex-col justify-between hidden md:flex">
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Workspace Info</h3>
+                        <div class="bg-gray-800/50 rounded-lg p-3 border border-gray-800">
+                            <div class="text-sm font-bold text-white truncate">{{ workspace.name }}</div>
+                            <div class="text-xs text-gray-400 mt-1">{{ workspace.description || 'No description' }}</div>
+                            <div class="text-[10px] bg-indigo-900/40 text-indigo-300 px-2 py-0.5 mt-2 rounded border border-indigo-700/30 inline-block">
+                                Format v{{ workspace.format_version }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Active Schedules</h3>
+                        <div class="space-y-2 max-h-40 overflow-y-auto">
+                            <div v-if="!workspace.schedules || workspace.schedules.length === 0" class="text-xs text-gray-500 italic">No scheduled runs</div>
+                            <div v-for="sched in workspace.schedules" :key="sched.pipeline_name" class="bg-gray-800/30 border border-gray-800 p-2 rounded text-xs">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-bold text-gray-300 truncate">{{ sched.pipeline_name }}</span>
+                                    <span :class="sched.enabled ? 'bg-green-900/35 text-green-400 border-green-700/20' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-1.5 rounded-full border text-[9px] font-sans">
+                                        {{ sched.enabled ? 'On' : 'Off' }}
+                                    </span>
+                                </div>
+                                <div class="text-[10px] text-gray-400 mt-1 flex justify-between">
+                                    <span>Schedule: {{ sched.cron || sched.interval_seconds + ' s' }}</span>
+                                    <span class="text-indigo-400">{{ sched.pipeline_type }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">System Status</h3>
+                        <div class="space-y-1.5">
+                            <div class="flex items-center text-xs justify-between">
+                                <span class="text-gray-400">SoverData Engine</span>
+                                <span class="flex items-center space-x-1">
+                                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                                    <span class="text-gray-200">Online</span>
+                                </span>
+                            </div>
+                            <div class="flex items-center text-xs justify-between">
+                                <span class="text-gray-400">DuckDB Version</span>
+                                <span class="text-gray-300 font-mono text-[10px]">0.10.x (In-Process)</span>
+                            </div>
+                            <div class="flex items-center text-xs justify-between">
+                                <span class="text-gray-400">Delta Lake</span>
+                                <span class="text-gray-300 font-mono text-[10px]">delta-rs (Active)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center text-[10px] text-gray-500 py-2 border-t border-gray-800/80">
+                    SoverData Server • Local Mode
+                </div>
+            </aside>
+
+            <!-- MAIN WORKSPACE VIEWER -->
+            <div class="flex-1 flex flex-col overflow-y-auto bg-[#0d1117] p-6">
+                
+                <!-- CATALOG EXPLORER TAB -->
+                <section v-if="activeTab === 'catalog'" class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Delta Catalog Explorer</h2>
+                            <p class="text-sm text-gray-400">Browse tables and dimensions loaded in your Lakehouse bronze, silver and gold folders.</p>
+                        </div>
+                        <button @click="loadTables" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg border border-gray-700 transition flex items-center space-x-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> <span>Refresh</span>
+                        </button>
+                    </div>
+
+                    <div v-if="tables.length === 0" class="text-center p-12 bg-slate-900/40 rounded-xl border border-dashed border-gray-800">
+                        <i data-lucide="database" class="w-12 h-12 text-gray-600 mx-auto mb-4"></i>
+                        <h4 class="text-lg font-bold text-gray-300">Your Lakehouse is empty</h4>
+                        <p class="text-sm text-gray-500 max-w-sm mx-auto mt-1">Run an ingestion pipeline to load raw sources from your connections into bronze Delta tables.</p>
+                        <button @click="activeTab = 'pipelines'" class="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition">
+                            Go to Pipelines
+                        </button>
+                    </div>
+
+                    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Tables List -->
+                        <div class="lg:col-span-1 bg-slate-900/60 rounded-xl border border-gray-800 p-4 space-y-4">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-2 pb-2 border-b border-gray-800">Lakehouse Tables</h3>
+                            <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                                <div v-for="table in tables" :key="table.tier + '_' + table.name" 
+                                     @click="previewTable(table)"
+                                     :class="['p-3 rounded-lg border cursor-pointer transition flex justify-between items-center', 
+                                              selectedTable?.name === table.name && selectedTable?.tier === table.tier ? 'bg-indigo-950/40 border-indigo-500/80 text-white' : 'bg-gray-950/40 border-gray-800 hover:bg-gray-800/50']">
+                                    <div class="flex items-center space-x-2.5 truncate">
+                                        <div :class="['w-2 h-2 rounded-full', 
+                                                      table.tier === 'bronze' ? 'bg-amber-500' : table.tier === 'silver' ? 'bg-indigo-400' : 'bg-green-400']"></div>
+                                        <div class="truncate">
+                                            <div class="text-sm font-bold">{{ table.name }}</div>
+                                            <div class="text-[10px] text-gray-500 font-mono truncate">{{ table.path }}</div>
+                                        </div>
+                                    </div>
+                                    <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase',
+                                                   table.tier === 'bronze' ? 'bg-amber-950/45 text-amber-400' : table.tier === 'silver' ? 'bg-indigo-950/45 text-indigo-400' : 'bg-green-950/45 text-green-400']">
+                                        {{ table.tier }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Table Preview Details -->
+                        <div class="lg:col-span-2 space-y-4">
+                            <div v-if="!selectedTable" class="bg-slate-900/40 border border-gray-800 rounded-xl p-12 text-center text-gray-500">
+                                Select a table on the left catalog panel to view live records, schema headers and statistics.
+                            </div>
+                            <div v-else class="bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-4">
+                                <div class="flex justify-between items-start pb-4 border-b border-gray-800">
+                                    <div>
+                                        <h3 class="text-xl font-extrabold text-white flex items-center space-x-2">
+                                            <span>{{ selectedTable.tier }}.{{ selectedTable.name }}</span>
+                                        </h3>
+                                        <p class="text-xs text-gray-400 mt-1">Delta format • delta-rs reader • zero-copy PyArrow mapping</p>
+                                    </div>
+                                    <button @click="previewTable(selectedTable)" class="text-xs text-indigo-400 hover:underline">
+                                        Reload Data
+                                    </button>
+                                </div>
+
+                                <!-- Loading / Error states -->
+                                <div v-if="previewLoading" class="text-center py-12 text-gray-400">
+                                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.18 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Fetching Delta records from disk...
+                                </div>
+                                <div v-else-if="previewError" class="p-4 bg-red-950/30 border border-red-800 text-red-400 rounded-lg text-sm">
+                                    {{ previewError }}
+                                </div>
+
+                                <!-- Table Visualizer -->
+                                <div v-else-if="previewData" class="space-y-4">
+                                    <div class="flex space-x-6 text-xs text-gray-400">
+                                        <div>Columns: <strong class="text-gray-200">{{ previewData.columns.length }}</strong></div>
+                                        <div>Cached row count: <strong class="text-gray-200">{{ previewData.row_count }}</strong></div>
+                                    </div>
+                                    <div class="overflow-x-auto border border-gray-800 rounded-lg max-h-96">
+                                        <table class="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr class="bg-gray-950 font-mono text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+                                                    <th v-for="col in previewData.columns" :key="col" class="p-3 whitespace-nowrap">{{ col }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-800 text-sm">
+                                                <tr v-for="(row, idx) in previewData.rows" :key="idx" class="hover:bg-gray-800/30 transition">
+                                                    <td v-for="col in previewData.columns" :key="col" class="p-3 font-mono text-xs whitespace-nowrap text-gray-300">
+                                                        {{ row[col] === null ? 'NULL' : row[col] }}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- DYNAMIC LINEAGE VISUALIZER TAB -->
+                <section v-if="activeTab === 'lineage'" class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Interactive Lineage Graph</h2>
+                            <p class="text-sm text-gray-400">Trace transactional inputs and pipeline transformations flowing down through Medallion Lakehouse layers.</p>
+                        </div>
+                        <button @click="loadLineage" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg border border-gray-700 transition flex items-center space-x-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> <span>Re-Analyze</span>
+                        </button>
+                    </div>
+
+                    <div v-if="lineageLoading" class="text-center py-12 text-gray-400 bg-slate-900/40 rounded-xl border border-gray-800">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.18 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Inspecting code structure and mappings...
+                    </div>
+
+                    <div v-else class="bg-[#0b0f19] border border-gray-800 rounded-xl p-6 min-h-[500px] flex flex-col justify-between relative overflow-hidden shadow-inner">
+                        <!-- Legend -->
+                        <div class="flex space-x-4 text-xs font-mono mb-4 border-b border-gray-800/60 pb-3 flex-wrap gap-y-2">
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-amber-500/10 border border-amber-600 inline-block"></span><span class="text-amber-400">Connection</span></span>
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-blue-500/10 border border-blue-600 inline-block"></span><span class="text-blue-400">Python Ingestion</span></span>
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-amber-950/20 border border-amber-500 inline-block"></span><span class="text-gray-300">Bronze Table</span></span>
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-purple-500/10 border border-purple-600 inline-block"></span><span class="text-purple-400">SQL Pipeline</span></span>
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-indigo-950/20 border border-indigo-500 inline-block"></span><span class="text-gray-300">Silver Table</span></span>
+                            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-green-950/20 border border-green-500 inline-block"></span><span class="text-gray-300">Gold Table</span></span>
+                        </div>
+
+                        <!-- Render diagram in responsive flow list layout simulating beautiful nodes -->
+                        <div class="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                            <!-- Tier 1: Connections -->
+                            <div class="space-y-4">
+                                <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center border-b border-gray-800pb-1">1. Sources</div>
+                                <div class="space-y-3">
+                                    <div v-for="node in filterLineage('connection')" :key="node.id" class="p-3 bg-amber-500/10 border border-amber-600/50 rounded-xl relative group shadow">
+                                        <div class="text-sm font-extrabold text-amber-400 flex items-center space-x-1.5">
+                                            <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                                            <span>{{ node.label }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-gray-500 font-mono mt-1">{{ node.metadata.file_path || 'External' }}</div>
+                                        <!-- outgoing arrow hook -->
+                                        <div class="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-amber-500 rounded-full border border-slatebg hidden lg:block"></div>
+                                    </div>
+                                    <div v-if="filterLineage('connection').length === 0" class="text-xs text-gray-500 italic text-center">No External Sources</div>
+                                </div>
+                            </div>
+
+                            <!-- Tier 2: Pipelines -->
+                            <div class="space-y-4">
+                                <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center border-b border-gray-800pb-1">2. Ingestions & Transforms</div>
+                                <div class="space-y-3">
+                                    <div v-for="node in filterLineagePipelines()" :key="node.id" 
+                                         :class="['p-3 border rounded-xl relative shadow', 
+                                                   node.type === 'pipeline_python' ? 'bg-blue-500/10 border-blue-600/50 text-blue-400' : 'bg-purple-500/10 border-purple-600/50 text-purple-400']">
+                                        <div class="text-sm font-extrabold flex items-center space-x-1.5">
+                                            <i :data-lucide="node.type === 'pipeline_python' ? 'code-2' : 'database'" class="w-3.5 h-3.5"></i>
+                                            <span>{{ node.label }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-gray-500 font-mono mt-1">{{ node.metadata.file_path }}</div>
+                                        
+                                        <!-- Incoming & Outgoing anchor dots -->
+                                        <div class="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-[#4f46e5] rounded-full border border-slatebg hidden lg:block"></div>
+                                        <div class="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-[#4f46e5] rounded-full border border-slatebg hidden lg:block"></div>
+                                    </div>
+                                    <div v-if="filterLineagePipelines().length === 0" class="text-xs text-gray-500 italic text-center">No Active Pipelines</div>
+                                </div>
+                            </div>
+
+                            <!-- Tier 3: Bronze Layers -->
+                            <div class="space-y-4">
+                                <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center border-b border-gray-800pb-1">3. Bronze Storage</div>
+                                <div class="space-y-3">
+                                    <div v-for="node in filterLineage('table_bronze')" :key="node.id" class="p-3 bg-amber-950/20 border border-amber-500/50 rounded-xl relative shadow">
+                                        <div class="text-sm font-extrabold text-amber-400 flex items-center space-x-1.5">
+                                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                                            <span>{{ node.label }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-gray-500 font-mono mt-1">Format: Delta Parquet</div>
+                                        
+                                        <!-- Hook anchors -->
+                                        <div class="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-amber-500 rounded-full border border-slatebg hidden lg:block"></div>
+                                        <div class="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-amber-500 rounded-full border border-slatebg hidden lg:block"></div>
+                                    </div>
+                                    <div v-if="filterLineage('table_bronze').length === 0" class="text-xs text-gray-500 italic text-center">Bronze storage empty</div>
+                                </div>
+                            </div>
+
+                            <!-- Tier 4: Silver & Gold Storage -->
+                            <div class="space-y-4">
+                                <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center border-b border-gray-800pb-1">4. Silver & Gold Models</div>
+                                <div class="space-y-3">
+                                    <!-- Silver Tables -->
+                                    <div v-for="node in filterLineage('table_silver')" :key="node.id" class="p-3 bg-indigo-950/20 border border-indigo-500/50 rounded-xl relative shadow">
+                                        <div class="text-sm font-extrabold text-indigo-400 flex items-center space-x-1.5">
+                                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                            <span>{{ node.label }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-gray-500 font-mono mt-1">Format: Delta Silver</div>
+                                        <div class="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-indigo-500 rounded-full border border-slatebg hidden lg:block"></div>
+                                    </div>
+
+                                    <!-- Gold Tables -->
+                                    <div v-for="node in filterLineage('table_gold')" :key="node.id" class="p-3 bg-green-950/20 border border-green-500/50 rounded-xl relative shadow">
+                                        <div class="text-sm font-extrabold text-green-400 flex items-center space-x-1.5">
+                                            <i data-lucide="trophy" class="w-3.5 h-3.5"></i>
+                                            <span>{{ node.label }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-gray-500 font-mono mt-1">Format: Delta Gold</div>
+                                        <div class="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-green-500 rounded-full border border-slatebg hidden lg:block"></div>
+                                    </div>
+
+                                    <div v-if="filterLineage('table_silver').length === 0 && filterLineage('table_gold').length === 0" class="text-xs text-gray-500 italic text-center">No curated summaries</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Flows info bar footer -->
+                        <div class="mt-6 text-center text-xs text-gray-500 border-t border-gray-800/60 pt-3">
+                            Currently showing <strong class="text-indigo-400">{{ lineageData?.nodes?.length || 0 }} nodes</strong> and <strong class="text-indigo-400">{{ lineageData?.edges?.length || 0 }} edges</strong>. Flows are analyzed dynamically directly from the active code base.
+                        </div>
+                    </div>
+                </section>
+
+                <!-- PIPELINES STUDIO -->
+                <section v-if="activeTab === 'pipelines'" class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Pipeline Studio</h2>
+                            <p class="text-sm text-gray-400">Build ingestion routines in Python and transform records across tiers in SQL.</p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button @click="openCreatePipelineModal('python')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-2 rounded-lg transition flex items-center space-x-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> <span>New Python</span>
+                            </button>
+                            <button @click="openCreatePipelineModal('sql')" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg border border-gray-700 transition flex items-center space-x-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> <span>New SQL</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                        <!-- Left Pipelines Sidebar -->
+                        <div class="lg:col-span-1 bg-slate-900/60 rounded-xl border border-gray-800 p-4 space-y-4">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-2 pb-2 border-b border-gray-800">Available Pipelines</h3>
+                            <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                                <div v-if="pipelines.length === 0" class="text-xs text-gray-500 italic p-3 text-center">No pipelines crafted yet.</div>
+                                <div v-for="pipe in pipelines" :key="pipe.type + '_' + pipe.name"
+                                     @click="loadPipeline(pipe)"
+                                     :class="['p-3 rounded-lg border cursor-pointer transition flex items-center justify-between',
+                                              selectedPipeline?.name === pipe.name && selectedPipeline?.type === pipe.type ? 'bg-indigo-950/40 border-indigo-500/80 text-white' : 'bg-gray-950/40 border-gray-800 hover:bg-gray-800/50']">
+                                    <div class="flex items-center space-x-2.5 truncate">
+                                        <span :class="pipe.type === 'python' ? 'bg-blue-900/40 text-blue-400 border-blue-700/30' : 'bg-indigo-900/40 text-indigo-400 border-indigo-700/30'" class="p-1.5 rounded-lg border flex-shrink-0">
+                                            <i :data-lucide="pipe.type === 'python' ? 'code-2' : 'database'" class="w-4 h-4"></i>
+                                        </span>
+                                        <div class="truncate">
+                                            <div class="text-sm font-bold truncate">{{ pipe.name }}</div>
+                                            <div class="text-[10px] text-gray-500 font-mono truncate">{{ pipe.file_path }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Code Editor Workspace -->
+                        <div class="lg:col-span-3 space-y-4">
+                            <div v-if="!selectedPipeline" class="bg-slate-900/40 border border-gray-800 rounded-xl p-12 text-center text-gray-500">
+                                Select a python or sql pipeline from the studio list to view, edit, version control or run manually.
+                            </div>
+                            <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <!-- Code Editor (Left 2 cols) -->
+                                <div class="lg:col-span-2 bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-4 flex flex-col min-h-[500px]">
+                                    <div class="flex justify-between items-start pb-4 border-b border-gray-800 flex-wrap gap-2">
+                                        <div>
+                                            <div class="flex items-center space-x-2">
+                                                <h3 class="text-lg font-extrabold text-white">{{ selectedPipeline.name }}</h3>
+                                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-800 text-gray-300">
+                                                    {{ selectedPipeline.type }}
+                                                </span>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-1 font-mono">Located: {{ selectedPipeline.file_path }}</p>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            <button @click="savePipelineCode" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-semibold transition flex items-center space-x-1">
+                                                <i data-lucide="save" class="w-3.5 h-3.5"></i> <span>Save</span>
+                                            </button>
+                                            <button @click="triggerPipelineRun" class="bg-green-600 hover:bg-green-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-semibold transition flex items-center space-x-1">
+                                                <i data-lucide="play" class="w-3.5 h-3.5"></i> <span>Run</span>
+                                            </button>
+                                            <button @click="deletePipeline" class="bg-red-950/40 border border-red-800/40 text-red-400 hover:bg-red-900/30 text-xs px-2.5 py-1.5 rounded-lg transition">
+                                                <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Live Code Area -->
+                                    <div class="flex-1 flex flex-col">
+                                        <textarea v-model="selectedPipeline.content" 
+                                                  class="flex-1 min-h-[350px] bg-gray-950 border border-gray-800 rounded-lg p-4 font-mono text-sm text-green-400 focus:outline-none focus:border-indigo-500 font-sans leading-relaxed resize-y shadow-inner"></textarea>
+                                    </div>
+                                </div>
+
+                                <!-- AI Copilot side-bar (Right 1 col) -->
+                                <div class="lg:col-span-1 bg-slate-900/40 border border-gray-800 rounded-xl p-4 space-y-4 flex flex-col justify-between">
+                                    <div class="space-y-4">
+                                        <div class="flex items-center space-x-2 pb-2 border-b border-gray-800">
+                                            <span class="p-1.5 bg-indigo-600 text-white rounded">
+                                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                            </span>
+                                            <h4 class="text-sm font-bold text-white">SoverData GenAI Copilot</h4>
+                                        </div>
+                                        <p class="text-xs text-gray-400 leading-relaxed">
+                                            Describe what ingestion or transform routine you want to build. Copilot will write the script offline or use your cloud key!
+                                        </p>
+
+                                        <!-- provider settings -->
+                                        <div class="space-y-3 bg-gray-950/60 p-3 rounded-lg border border-gray-800/80 text-xs">
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Provider Mode</label>
+                                                <select v-model="copilotSettings.provider" class="w-full bg-slate-900 border border-gray-800 text-white rounded p-1.5 focus:outline-none text-[11px]">
+                                                    <option value="offline">Offline Rule Boilerplate</option>
+                                                    <option value="openai">OpenAI (OpenAI key)</option>
+                                                    <option value="anthropic">Anthropic Claude Console</option>
+                                                </select>
+                                            </div>
+                                            <div v-if="copilotSettings.provider !== 'offline'" class="space-y-2">
+                                                <div>
+                                                    <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Bearer API Key</label>
+                                                    <input v-model="copilotSettings.apiKey" type="password" placeholder="sk-..." class="w-full bg-slate-900 border border-gray-800 text-white rounded px-2 py-1 focus:outline-none text-[11px]" />
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Custom Model Name</label>
+                                                    <input v-model="copilotSettings.model" type="text" placeholder="e.g. gpt-4o-mini" class="w-full bg-slate-900 border border-gray-800 text-white rounded px-2 py-1 focus:outline-none text-[11px]" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- prompt text area -->
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">What should this pipeline do?</label>
+                                            <textarea v-model="copilotPrompt" 
+                                                      placeholder="E.g. read from local_db connection's customer table, add ingested_at audit metadata column, and write-delta to gold sales..."
+                                                      class="w-full h-28 bg-gray-950 border border-gray-800 focus:outline-none focus:border-indigo-500 text-xs rounded-lg p-2.5 text-gray-300 resize-none leading-relaxed"></textarea>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-2 pt-2 border-t border-gray-800">
+                                        <button @click="generateAICode" :disabled="copilotLoading" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-lg transition inline-flex items-center justify-center space-x-1.5">
+                                            <i data-lucide="cpu" class="w-3.5 h-3.5"></i> <span>Generate Code</span>
+                                        </button>
+                                        <span v-if="copilotSource" class="block text-[9px] text-center text-indigo-400 font-mono">
+                                            Generated via: {{ copilotSource }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- CONNECTIONS MANAGER -->
+                <section v-if="activeTab === 'connections'" class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">External Connections</h2>
+                            <p class="text-sm text-gray-400">Map databases and APIs to ingest records securely without committing parameters to workspace versioning.</p>
+                        </div>
+                        <button @click="openCreateConnModal" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg transition flex items-center space-x-1 font-semibold">
+                            <i data-lucide="plus" class="w-4 h-4"></i> <span>Add Connection</span>
+                        </button>
+                    </div>
+
+                    <div v-if="connections.length === 0" class="text-center p-12 bg-slate-900/40 rounded-xl border border-dashed border-gray-800">
+                        <i data-lucide="link" class="w-12 h-12 text-gray-600 mx-auto mb-4"></i>
+                        <h4 class="text-lg font-bold text-gray-300">No external connectors created</h4>
+                        <p class="text-sm text-gray-500 max-w-sm mx-auto mt-1">Configure database servers or REST APIs to pull transactional datasets in simple Python code.</p>
+                    </div>
+
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div v-for="conn in connections" :key="conn.name" class="bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-4 flex flex-col justify-between">
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="p-2 bg-indigo-950/40 text-indigo-400 rounded-lg border border-indigo-800/30">
+                                            <i data-lucide="link" class="w-4 h-4"></i>
+                                        </span>
+                                        <div>
+                                            <h4 class="text-base font-extrabold text-white">{{ conn.name }}</h4>
+                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-sans border font-bold uppercase bg-gray-800 text-gray-300">
+                                                {{ conn.type }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="flex space-x-1">
+                                        <button @click="editConn(conn)" class="p-1 px-2 hover:bg-gray-800 hover:text-white rounded text-gray-400 text-xs transition">
+                                            Edit
+                                        </button>
+                                        <button @click="deleteConn(conn)" class="p-1 text-red-400 hover:bg-red-950/20 hover:text-red-500 rounded text-xs transition">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-gray-400 h-10 overflow-hidden text-ellipsis">{{ conn.description || 'No description provided.' }}</p>
+                                <hr class="border-gray-800" />
+                                <div class="text-xs text-gray-400 font-mono space-y-1">
+                                    <div v-if="conn.url || conn.base_url" class="truncate">Host/API: <span class="text-gray-200">{{ conn.url || conn.base_url }}</span></div>
+                                    <div v-if="conn.database" class="truncate">DB: <span class="text-gray-200">{{ conn.database }}</span></div>
+                                    <div v-if="conn.user">Username: <span class="text-gray-200">{{ conn.user }}</span></div>
+                                </div>
+                            </div>
+                            <div class="pt-2 flex justify-between items-center">
+                                <button @click="testConn(conn.name)" class="text-xs text-indigo-400 font-bold hover:underline flex items-center space-x-1">
+                                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> <span>Test Connectivity</span>
+                                </button>
+                                <span v-if="testResult[conn.name]" 
+                                      :class="['text-[10px] px-2 py-0.5 rounded border', 
+                                               testResult[conn.name].status === 'success' ? 'bg-green-950/30 text-green-400 border-green-800/30' : 'bg-red-950/30 text-red-400 border-red-800/30']">
+                                    {{ testResult[conn.name].status === 'success' ? 'Succeeded' : 'Failed' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- PIPELINE RUNS DASHBOARD -->
+                <section v-if="activeTab === 'runs'" class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-black text-white">Pipeline Execution Runs</h2>
+                            <p class="text-sm text-gray-400">View real-time engine activity, trigger performance and debugging log trace histories.</p>
+                        </div>
+                        <button @click="loadRuns" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg border border-gray-700 transition flex items-center space-x-1">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> <span>Refresh</span>
+                        </button>
+                    </div>
+
+                    <div v-if="runs.length === 0" class="text-center p-12 bg-slate-900/40 rounded-xl border border-dashed border-gray-800">
+                        <i data-lucide="play-circle" class="w-12 h-12 text-gray-600 mx-auto mb-4"></i>
+                        <h4 class="text-lg font-bold text-gray-300">No pipelines have run yet</h4>
+                        <p class="text-sm text-gray-500 mt-1">Schedules and user trigger executions will be tracked in-process on disk here.</p>
+                    </div>
+
+                    <div v-else class="bg-slate-900/60 rounded-xl border border-gray-800 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-950 text-xs text-gray-400 uppercase tracking-wider font-mono border-b border-gray-800">
+                                        <th class="p-4">Pipeline</th>
+                                        <th class="p-4">Type</th>
+                                        <th class="p-4">Execution Status</th>
+                                        <th class="p-4">Triggered At</th>
+                                        <th class="p-4">Duration</th>
+                                        <th class="p-4 text-right">Tracing</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-800 text-sm">
+                                    <tr v-for="run in runs" :key="run.run_id" class="hover:bg-gray-800/20 transition">
+                                        <td class="p-4 font-extrabold text-white">{{ run.pipeline_name }}</td>
+                                        <td class="p-4 uppercase text-xs font-mono text-gray-400">{{ run.pipeline_type }}</td>
+                                        <td class="p-4">
+                                            <span :class="['px-2 py-0.5 rounded-full text-xs font-semibold inline-block border',
+                                                           run.status === 'success' ? 'bg-green-950/20 text-green-400 border-green-800/20' : 
+                                                           run.status === 'failed' ? 'bg-red-950/20 text-red-400 border-red-800/20' : 'bg-blue-900/10 text-blue-400 border-blue-800/20 animate-pulse']">
+                                                {{ run.status }}
+                                            </span>
+                                        </td>
+                                        <td class="p-4 font-mono text-xs text-gray-400">
+                                            {{ run.started_at ? formatTime(run.started_at) : 'N/A' }}
+                                        </td>
+                                        <td class="p-4 font-mono text-xs text-gray-400">{{ run.duration }}s</td>
+                                        <td class="p-4 text-right">
+                                            <button @click="viewRunDetails(run.run_id)" class="text-indigo-400 hover:text-indigo-300 font-bold hover:underline py-1 px-2 hover:bg-indigo-950/30 rounded text-xs transition">
+                                                View Logs
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SQL QUERY CONSOLE -->
+                <section v-if="activeTab === 'console'" class="space-y-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-white">Sovereign SQL Console</h2>
+                        <p class="text-sm text-gray-400">Write standard ANSI SQL targeting your register tiers or run custom analytics in DuckDB on-the-fly.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-6">
+                        <div class="bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-4">
+                            <div class="flex justify-between items-center">
+                                <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Write SQL Statement</label>
+                                <button @click="runCustomConsoleQuery" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold transition flex items-center space-x-1 shadow-md">
+                                    <i data-lucide="play" class="w-3.5 h-3.5"></i> <span>Execute Query</span>
+                                </button>
+                            </div>
+                            <textarea v-model="sqlConsoleInput" 
+                                      placeholder="SELECT * FROM bronze.my_table LIMIT 10;" 
+                                      class="w-full h-32 bg-gray-950 border border-gray-800 rounded-lg p-4 font-mono text-sm text-green-400 focus:outline-none focus:border-indigo-500 leading-relaxed resize-y shadow-inner"></textarea>
+                        </div>
+
+                        <!-- Results -->
+                        <div class="bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-4">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wider mb-2 pb-2 border-b border-gray-800">Results Console</h3>
+                            
+                            <div v-if="consoleLoading" class="text-center py-12 text-gray-400">
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.18 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Query running in-process...
+                            </div>
+                            <div v-else-if="consoleError" class="p-4 bg-red-950/30 border border-red-800 text-red-400 rounded-lg text-sm font-mono whitespace-pre-wrap">
+                                {{ consoleError }}
+                            </div>
+                            <div v-else-if="consoleResult" class="space-y-4">
+                                <div class="text-xs text-gray-400">
+                                    Executed successfully! Rows returned: <strong class="text-gray-200">{{ consoleResult.row_count }}</strong>
+                                </div>
+                                <div v-if="consoleResult.columns.length === 0" class="text-sm text-gray-500 italic">
+                                    Query succeeded but returned no rows/columns.
+                                </div>
+                                <div v-else class="overflow-x-auto border border-gray-800 rounded-lg max-h-96">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-gray-950 font-mono text-xs text-gray-400 border-b border-gray-800 uppercase tracking-wider">
+                                                <th v-for="col in consoleResult.columns" :key="col" class="p-3 whitespace-nowrap">{{ col }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-800 text-sm font-mono">
+                                            <tr v-for="(row, idx) in consoleResult.rows" :key="idx" class="hover:bg-gray-800/20 transition">
+                                                <td v-for="col in consoleResult.columns" :key="col" class="p-3 text-xs text-gray-300 whitespace-nowrap">
+                                                    {{ row[col] === null ? 'NULL' : row[col] }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div v-else class="text-center py-12 text-gray-500 italic">
+                                Run a SQL statement to visualize relational outputs instantly.
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SETTINGS & WORKSPACE MANAGER -->
+                <section v-if="activeTab === 'settings'" class="space-y-6">
+                    <div>
+                        <h2 class="text-2xl font-black text-white">Workspace Configuration</h2>
+                        <p class="text-sm text-gray-400">Configure parameters, metadata settings, and cron schedules directly inside your filesystem.</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 rounded-xl border border-gray-800 p-5 space-y-6 max-w-xl">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Workspace Name</label>
+                                <input v-model="workspaceEdit.name" type="text" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Description</label>
+                                <textarea v-model="workspaceEdit.description" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 h-20 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between items-center mb-3">
+                                <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Schedules</label>
+                                <button @click="addEditSchedule" class="text-xs text-indigo-400 hover:underline font-bold">+ Add Schedule</button>
+                            </div>
+                            <div class="space-y-2">
+                                <div v-for="(sched, index) in workspaceEdit.schedules" :key="index" class="bg-gray-950 border border-gray-800 p-3 rounded-lg flex items-center justify-between space-x-2">
+                                    <div class="flex items-center space-x-2 flex-wrap gap-y-1 text-xs">
+                                        <input v-model="sched.pipeline_name" placeholder="pipeline_name" class="bg-slate-900 border border-gray-800 rounded px-2 py-1 max-w-[120px] text-white" />
+                                        <select v-model="sched.pipeline_type" class="bg-slate-900 border border-gray-800 rounded px-2 py-1 text-white">
+                                            <option value="python">Python</option>
+                                            <option value="sql">SQL</option>
+                                        </select>
+                                        <input v-model="sched.cron" placeholder="Cron e.g. 0 * * * *" class="bg-slate-900 border border-gray-800 rounded px-2 py-1 max-w-[120px] text-white" />
+                                        <label class="flex items-center space-x-1 cursor-pointer">
+                                            <input type="checkbox" v-model="sched.enabled" class="rounded border-gray-800 bg-slate-900 text-indigo-600 focus:ring-0 focus:ring-offset-0" />
+                                            <span class="text-gray-400">Enabled</span>
+                                        </label>
+                                    </div>
+                                    <button @click="removeEditSchedule(index)" class="text-red-400 hover:text-red-500 text-xs font-extrabold px-1">✕</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 border-t border-gray-800 flex justify-end">
+                            <button @click="saveWorkspaceInfo" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2.5 rounded-lg font-bold transition">
+                                Save Settings
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- CONNECTION MODAL -->
+        <div v-if="connModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-gray-800 rounded-xl max-w-lg w-full overflow-hidden p-6 space-y-4">
+                <h3 class="text-lg font-bold text-white">{{ isEditingConn ? 'Edit Connection' : 'New Connection' }}</h3>
+                <div class="space-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Name</label>
+                            <input v-model="activeConn.name" :disabled="isEditingConn" type="text" placeholder="sales_db" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Type</label>
+                            <select v-model="activeConn.type" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                                <option value="sqlite">SQLite</option>
+                                <option value="postgresql">PostgreSQL</option>
+                                <option value="rest">REST API (JSON)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Description</label>
+                        <input v-model="activeConn.description" type="text" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white focus:outline-none" />
+                    </div>
+
+                    <!-- DB details -->
+                    <div v-if="activeConn.type !== 'rest'" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Connection String / URL</label>
+                            <input v-model="activeConn.url" type="text" placeholder="e.g. postgresql://user:pass@localhost:5432/dbname" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white font-mono text-xs focus:outline-none" />
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Database File (SQLite)</label>
+                                <input v-model="activeConn.database" type="text" placeholder="sales.db" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white text-xs focus:outline-none" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- REST details -->
+                    <div v-if="activeConn.type === 'rest'" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 uppercase mb-1">API Base URL</label>
+                            <input v-model="activeConn.base_url" type="text" placeholder="https://api.example.com/v1" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white text-xs focus:outline-none" />
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Auth Type</label>
+                                <select v-model="activeConn.auth_type" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white text-xs focus:outline-none">
+                                    <option value="none">None</option>
+                                    <option value="bearer">Bearer Token</option>
+                                    <option value="apikey">Custom Header API Key</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-400 uppercase mb-1">API Key Value</label>
+                                <input v-model="activeConn.api_key" type="password" placeholder="••••••••" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white text-xs focus:outline-none" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-gray-800 flex justify-end space-x-2">
+                    <button @click="connModalOpen = false" class="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-4 py-2 rounded-lg font-semibold transition">Cancel</button>
+                    <button @click="saveConnection" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold transition">Save Connection</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- CREATE PIPELINE MODAL -->
+        <div v-if="pipelineModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-gray-800 rounded-xl max-w-md w-full overflow-hidden p-6 space-y-4">
+                <h3 class="text-lg font-bold text-white uppercase tracking-wider text-xs">Create New {{ activePipelineCreateType }} Pipeline</h3>
+                <div class="space-y-4 text-sm">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Pipeline Name</label>
+                        <input v-model="newPipelineName" type="text" placeholder="e.g. ingest_sales" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" />
+                        <p class="text-[10px] text-gray-500 mt-1">
+                            {{ activePipelineCreateType === 'sql' ? 'Convention tip: Name your file {tier}_{table_name} e.g. silver_sales to save output directly to that tier.' : 'Python scripts will compile under pipelines/python/*.py.' }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-gray-800 flex justify-end space-x-2">
+                    <button @click="pipelineModalOpen = false" class="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-4 py-2 rounded-lg font-semibold transition">Cancel</button>
+                    <button @click="createPipeline" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold transition">Create File</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RUN LOGS MODAL -->
+        <div v-if="runLogsModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-gray-800 rounded-xl max-w-4xl w-full overflow-hidden p-6 space-y-4">
+                <div class="flex justify-between items-start pb-4 border-b border-gray-800">
+                    <div>
+                        <h3 class="text-lg font-extrabold text-white">Execution Logs: {{ selectedRunLogs?.pipeline_name }}</h3>
+                        <p class="text-xs text-gray-500 font-mono mt-1">Run ID: {{ selectedRunLogs?.run_id }}</p>
+                    </div>
+                    <button @click="runLogsModalOpen = false" class="text-gray-400 hover:text-white font-extrabold">✕</button>
+                </div>
+                <div class="space-y-3 text-xs">
+                    <div class="grid grid-cols-4 gap-2 bg-gray-950 border border-gray-800 p-3 rounded-lg font-mono text-gray-300">
+                        <div>Status: <strong :class="selectedRunLogs?.status === 'success' ? 'text-green-400' : 'text-red-400'">{{ selectedRunLogs?.status }}</strong></div>
+                        <div>Duration: <strong class="text-white">{{ selectedRunLogs?.duration }}s</strong></div>
+                        <div class="col-span-2">Started At: <strong class="text-white">{{ selectedRunLogs?.started_at ? formatTime(selectedRunLogs.started_at) : 'N/A' }}</strong></div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase mb-1">Terminal Stdout / Tracing</label>
+                        <pre class="bg-black text-[11px] p-4 text-green-400 font-mono rounded-lg overflow-y-auto h-80 whitespace-pre-wrap leading-relaxed border border-gray-800 shadow-inner select-text">{{ selectedRunLogs?.logs || 'No logs printed.' }}</pre>
+                    </div>
+                </div>
+                <div class="pt-2 border-t border-gray-800 flex justify-end">
+                    <button @click="runLogsModalOpen = false" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-bold transition">Close Tracing</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MAIN APP CONTROLLER -->
+    <script>
+        const { createApp, ref, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('catalog');
+                const workspace = ref({});
+                const workspaceEdit = ref({});
+                const connections = ref([]);
+                const pipelines = ref([]);
+                const runs = ref([]);
+                const tables = ref([]);
+                
+                // Selection states
+                const selectedTable = ref(null);
+                const selectedPipeline = ref(null);
+                const testResult = ref({});
+                
+                // Modal and creation parameters
+                const connModalOpen = ref(false);
+                const isEditingConn = ref(false);
+                const activeConn = ref({});
+                
+                const pipelineModalOpen = ref(false);
+                const activePipelineCreateType = ref('python');
+                const newPipelineName = ref('');
+                
+                const runLogsModalOpen = ref(false);
+                const selectedRunLogs = ref(null);
+                
+                // Catalog state
+                const previewLoading = ref(false);
+                const previewError = ref('');
+                const previewData = ref(null);
+                
+                // SQL Console state
+                const sqlConsoleInput = ref('');
+                const consoleLoading = ref(false);
+                const consoleError = ref('');
+                const consoleResult = ref(null);
+
+                // Lineage Visualizer state
+                const lineageLoading = ref(false);
+                const lineageData = ref({ nodes: [], edges: [] });
+
+                // AI Copilot state
+                const copilotPrompt = ref('');
+                const copilotLoading = ref(false);
+                const copilotSource = ref('');
+                const copilotSettings = ref({
+                    provider: 'offline',
+                    apiKey: '',
+                    model: ''
+                });
+
+                // Fetch Workspace Config
+                const loadWorkspace = async () => {
+                    try {
+                        const res = await fetch('/api/workspace');
+                        workspace.value = await res.json();
+                        // Deep clone for edit screen
+                        workspaceEdit.value = JSON.parse(JSON.stringify(workspace.value));
+                    } catch (e) {
+                        console.error("Failed to load workspace info", e);
+                    }
+                };
+
+                // Fetch Connections
+                const loadConnections = async () => {
+                    try {
+                        const res = await fetch('/api/connections');
+                        connections.value = await res.json();
+                        nextTick(() => lucide.createIcons());
+                    } catch (e) {
+                        console.error("Failed to load connections", e);
+                    }
+                };
+
+                // Fetch Pipelines
+                const loadPipelines = async () => {
+                    try {
+                        const res = await fetch('/api/pipelines');
+                        pipelines.value = await res.json();
+                        nextTick(() => lucide.createIcons());
+                    } catch (e) {
+                        console.error("Failed to load pipelines", e);
+                    }
+                };
+
+                // Fetch Execution Runs
+                const loadRuns = async () => {
+                    try {
+                        const res = await fetch('/api/runs');
+                        runs.value = await res.json();
+                    } catch (e) {
+                        console.error("Failed to load runs", e);
+                    }
+                };
+
+                // Fetch Delta Catalog Tables
+                const loadTables = async () => {
+                    try {
+                        const res = await fetch('/api/catalog/tables');
+                        tables.value = await res.json();
+                        nextTick(() => lucide.createIcons());
+                    } catch (e) {
+                        console.error("Failed to load catalog tables", e);
+                    }
+                };
+
+                // Tab class utility
+                const tabClass = (tab) => {
+                    return activeTab.value === tab 
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10' 
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800/60';
+                };
+
+                // Time formatter
+                const formatTime = (isoString) => {
+                    if (!isoString) return '';
+                    const date = new Date(isoString);
+                    return date.toLocaleString();
+                };
+
+                // Test Connection connectivity
+                const testConn = async (name) => {
+                    testResult.value[name] = { status: 'testing' };
+                    try {
+                        const res = await fetch(`/api/connections/${name}/test`, { method: 'POST' });
+                        const data = await res.json();
+                        testResult.value[name] = data;
+                        if (data.status === 'success') {
+                            alert(`Success: ${data.message}`);
+                        } else {
+                            alert(`Failed: ${data.detail || data.message}`);
+                        }
+                    } catch (e) {
+                        testResult.value[name] = { status: 'failed', detail: e.toString() };
+                        alert(`Connection test failed: ${e}`);
+                    }
+                };
+
+                // Connection saving and editing
+                const openCreateConnModal = () => {
+                    isEditingConn.value = false;
+                    activeConn.value = { type: 'sqlite', name: '', url: '', db_path: '', auth_type: 'none' };
+                    connModalOpen.value = true;
+                };
+
+                const editConn = (conn) => {
+                    isEditingConn.value = true;
+                    activeConn.value = JSON.parse(JSON.stringify(conn));
+                    connModalOpen.value = true;
+                };
+
+                const saveConnection = async () => {
+                    if (!activeConn.value.name) {
+                        alert("Connection name is required");
+                        return;
+                    }
+                    try {
+                        const res = await fetch(`/api/connections/${activeConn.value.name}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(activeConn.value)
+                        });
+                        if (res.ok) {
+                            alert("Connection saved successfully!");
+                            connModalOpen.value = false;
+                            loadConnections();
+                        } else {
+                            const err = await res.json();
+                            alert(`Failed to save: ${err.detail}`);
+                        }
+                    } catch (e) {
+                        alert(`Failed to save connection: ${e}`);
+                    }
+                };
+
+                const deleteConn = async (conn) => {
+                    if (!confirm(`Are you sure you want to delete connection '${conn.name}'?`)) return;
+                    try {
+                        const res = await fetch(`/api/connections/${conn.name}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            loadConnections();
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                };
+
+                // Pipeline Loading, Editing & Executions
+                const loadPipeline = async (pipe) => {
+                    try {
+                        const res = await fetch(`/api/pipelines/${pipe.type}/${pipe.name}`);
+                        selectedPipeline.value = await res.json();
+                    } catch (e) {
+                        alert(`Failed to read pipeline file: ${e}`);
+                    }
+                };
+
+                const openCreatePipelineModal = (type) => {
+                    activePipelineCreateType.value = type;
+                    newPipelineName.value = '';
+                    pipelineModalOpen.value = true;
+                };
+
+                const createPipeline = async () => {
+                    if (!newPipelineName.value) {
+                        alert("Pipeline name is required");
+                        return;
+                    }
+                    const name = newPipelineName.value.replace(/[^a-zA-Z0-9__-]/g, '');
+                    const type = activePipelineCreateType.value;
+                    const defaultContent = type === 'python' 
+                        ? 'from soverdata import context\nimport pandas as pd\n\n# Code beautifully offline here!\n# df = pd.DataFrame({"id": [1, 2], "name": ["Sales-1", "Sales-2"]})\n# context.write_delta(df, "bronze", "my_table")\nprint("Hello Sovereignty!")' 
+                        : '-- target: silver.my_table\n-- Clean SQL here\nSELECT * FROM bronze.my_table;';
+                    try {
+                        const res = await fetch(`/api/pipelines/${type}/${name}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: defaultContent })
+                        });
+                        if (res.ok) {
+                            pipelineModalOpen.value = false;
+                            await loadPipelines();
+                            // Select newly created pipeline
+                            const created = pipelines.value.find(p => p.name === name && p.type === type);
+                            if (created) loadPipeline(created);
+                        } else {
+                            const err = await res.json();
+                            alert(`Failed to create pipeline: ${err.detail}`);
+                        }
+                    } catch (e) {
+                        alert(`Failed to create pipeline: ${e}`);
+                    }
+                };
+
+                const savePipelineCode = async () => {
+                    if (!selectedPipeline.value) return;
+                    try {
+                        const res = await fetch(`/api/pipelines/${selectedPipeline.value.type}/${selectedPipeline.value.name}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: selectedPipeline.value.content })
+                        });
+                        if (res.ok) {
+                            alert("Sovereign script saved to filesystem!");
+                        }
+                    } catch (e) {
+                        alert(`Failed to save: ${e}`);
+                    }
+                };
+
+                const triggerPipelineRun = async () => {
+                    if (!selectedPipeline.value) return;
+                    try {
+                        const res = await fetch(`/api/pipelines/${selectedPipeline.value.type}/${selectedPipeline.value.name}/run`, {
+                            method: 'POST'
+                        });
+                        if (res.ok) {
+                            alert("Pipeline triggered! Watch progress inside the 'Runs' dashboard.");
+                            loadRuns();
+                        }
+                    } catch (e) {
+                        alert(e);
+                    }
+                };
+
+                const deletePipeline = async () => {
+                    if (!selectedPipeline.value) return;
+                    if (!confirm(`Are you sure you want to delete pipeline file '${selectedPipeline.value.name}'?`)) return;
+                    try {
+                        const res = await fetch(`/api/pipelines/${selectedPipeline.value.type}/${selectedPipeline.value.name}`, {
+                            method: 'DELETE'
+                        });
+                        if (res.ok) {
+                            selectedPipeline.value = null;
+                            loadPipelines();
+                        }
+                    } catch (e) {
+                        alert(e);
+                    }
+                };
+
+                // Viewing Run Details and Logs
+                const viewRunDetails = async (runId) => {
+                    try {
+                        const res = await fetch(`/api/runs/${runId}`);
+                        if (res.ok) {
+                            selectedRunLogs.value = await res.json();
+                            runLogsModalOpen.value = true;
+                        }
+                    } catch (e) {
+                        alert(e);
+                    }
+                };
+
+                // Previewing Lakehouse Tables
+                const previewTable = async (table) => {
+                    selectedTable.value = table;
+                    previewLoading.value = true;
+                    previewError.value = '';
+                    previewData.value = null;
+
+                    try {
+                        const res = await fetch(`/api/catalog/tables/${table.tier}/${table.name}/preview`);
+                        if (res.ok) {
+                            previewData.value = await res.json();
+                        } else {
+                            const err = await res.json();
+                            previewError.value = err.detail || "Could not retrieve table data";
+                        }
+                    } catch (e) {
+                        previewError.value = "Failed to communicate with Delta endpoint.";
+                    } finally {
+                        previewLoading.value = false;
+                    }
+                };
+
+                // Custom SQL Console runs
+                const runCustomConsoleQuery = async () => {
+                    if (!sqlConsoleInput.value.strip) {
+                        sqlConsoleInput.value = sqlConsoleInput.value.trim();
+                    }
+                    if (!sqlConsoleInput.value) return;
+
+                    consoleLoading.value = true;
+                    consoleError.value = '';
+                    consoleResult.value = null;
+
+                    try {
+                        const res = await fetch('/api/query', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sql: sqlConsoleInput.value })
+                        });
+
+                        if (res.ok) {
+                            consoleResult.value = await res.json();
+                        } else {
+                            const err = await res.json();
+                            consoleError.value = err.detail || "Execution failed.";
+                        }
+                    } catch (e) {
+                        consoleError.value = "Connection to DuckDB failed: " + e.toString();
+                    } finally {
+                        consoleLoading.value = false;
+                    }
+                };
+
+                // Save workspace configuration settings
+                const saveWorkspaceInfo = async () => {
+                    try {
+                        const res = await fetch('/api/workspace', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(workspaceEdit.value)
+                        });
+                        if (res.ok) {
+                            alert("Workspace.yaml successfully synchronized!");
+                            loadWorkspace();
+                        }
+                    } catch (e) {
+                        alert(e);
+                    }
+                };
+
+                // Lineage loader & mapping helpers
+                const loadLineage = async () => {
+                    lineageLoading.value = true;
+                    try {
+                        const res = await fetch('/api/catalog/lineage');
+                        if (res.ok) {
+                            lineageData.value = await res.json();
+                        }
+                    } catch (e) {
+                        console.error("Lineage loading failed", e);
+                    } finally {
+                        lineageLoading.value = false;
+                        nextTick(() => lucide.createIcons());
+                    }
+                };
+
+                const filterLineage = (type) => {
+                    if (!lineageData.value || !lineageData.value.nodes) return [];
+                    return lineageData.value.nodes.filter(n => n.type === type);
+                };
+
+                const filterLineagePipelines = () => {
+                    if (!lineageData.value || !lineageData.value.nodes) return [];
+                    return lineageData.value.nodes.filter(n => n.type === 'pipeline_python' || n.type === 'pipeline_sql');
+                };
+
+                // AI Copilot generator codes
+                const generateAICode = async () => {
+                    if (!selectedPipeline.value) {
+                        alert("Please select a pipeline first, so Copilot knows where to load code!");
+                        return;
+                    }
+                    if (!copilotPrompt.value.trim()) {
+                        alert("Please type a description of what the pipeline should compile!");
+                        return;
+                    }
+
+                    copilotLoading.value = true;
+                    copilotSource.value = '';
+
+                    const payload = {
+                        prompt: copilotPrompt.value,
+                        pipeline_type: selectedPipeline.value.type,
+                        provider: copilotSettings.value.provider,
+                        api_key: copilotSettings.value.provider === 'offline' ? null : copilotSettings.value.apiKey,
+                        model_name: copilotSettings.value.provider === 'offline' ? null : copilotSettings.value.model
+                    };
+
+                    try {
+                        const res = await fetch('/api/copilot/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.status === 'success') {
+                                selectedPipeline.value.content = data.content;
+                                copilotSource.value = data.source + (data.warning ? ` (${data.warning})` : '');
+                                alert("AI Code successfully synthesized and loaded into the editor! Review and Save Changes when ready.");
+                            } else {
+                                alert(`Copilot Error: ${data.error_msg}`);
+                            }
+                        } else {
+                            const err = await res.json();
+                            alert(`Failed to prompt Copilot: ${err.detail}`);
+                        }
+                    } catch (e) {
+                        alert(`Copilot generation exception: ${e}`);
+                    } finally {
+                        copilotLoading.value = false;
+                    }
+                };
+
+                const addEditSchedule = () => {
+                    if (!workspaceEdit.value.schedules) workspaceEdit.value.schedules = [];
+                    workspaceEdit.value.schedules.push({
+                        pipeline_name: '',
+                        pipeline_type: 'python',
+                        cron: '0 * * * *',
+                        enabled: true
+                    });
+                };
+
+                const removeEditSchedule = (index) => {
+                    workspaceEdit.value.schedules.splice(index, 1);
+                };
+
+                // Lifecycle hook
+                onMounted(() => {
+                    loadWorkspace();
+                    loadConnections();
+                    loadPipelines();
+                    loadRuns();
+                    loadTables();
+                    nextTick(() => {
+                        setTimeout(() => lucide.createIcons(), 500);
+                    });
+                });
+
+                return {
+                    activeTab,
+                    tabClass,
+                    workspace,
+                    workspaceEdit,
+                    connections,
+                    pipelines,
+                    runs,
+                    tables,
+                    selectedTable,
+                    selectedPipeline,
+                    testResult,
+                    lineageLoading,
+                    lineageData,
+                    copilotPrompt,
+                    copilotLoading,
+                    copilotSource,
+                    copilotSettings,
+                    loadLineage,
+                    filterLineage,
+                    filterLineagePipelines,
+                    generateAICode,
+                    connModalOpen,
+                    isEditingConn,
+                    activeConn,
+                    pipelineModalOpen,
+                    activePipelineCreateType,
+                    newPipelineName,
+                    runLogsModalOpen,
+                    selectedRunLogs,
+                    previewLoading,
+                    previewError,
+                    previewData,
+                    sqlConsoleInput,
+                    consoleLoading,
+                    consoleError,
+                    consoleResult,
+                    formatTime,
+                    testConn,
+                    openCreateConnModal,
+                    editConn,
+                    saveConnection,
+                    deleteConn,
+                    loadPipeline,
+                    openCreatePipelineModal,
+                    createPipeline,
+                    savePipelineCode,
+                    triggerPipelineRun,
+                    deletePipeline,
+                    viewRunDetails,
+                    previewTable,
+                    runCustomConsoleQuery,
+                    saveWorkspaceInfo,
+                    addEditSchedule,
+                    removeEditSchedule,
+                    loadTables,
+                    loadRuns
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

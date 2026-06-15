@@ -1,0 +1,4 @@
+[2026-06-15 09:47:40] Starting pipeline silver_sales_summary (sql) with Run ID c7bb7fbd-b505-4f8a-903e-bfddc53aa9ec
+[2026-06-15 09:47:40] Running SQL against DuckDB Engine. Detected target: silver.sales_summary
+[2026-06-15 09:47:40] Writing 5 rows to Delta table: silver.sales_summary
+[2026-06-15 09:47:40] Successfully completed running pipeline silver_sales_summary!
