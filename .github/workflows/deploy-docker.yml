@@ -22,7 +22,8 @@ jobs:
             SoverData-Gemini-3.5-Flash) APP=soverdata-gemini-35-flash ;;
           esac
           echo "APP_NAME=$APP" >> $GITHUB_ENV
-          echo "IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$APP:latest" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
+          echo "IMAGE_BASE=${{ secrets.ACR_LOGIN_SERVER }}/$APP" >> $GITHUB_ENV
 
       - name: Log in to ACR
         uses: docker/login-action@v3
@@ -36,7 +37,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: |
+            ${{ env.IMAGE_BASE }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_BASE }}:latest
 
       - name: Log in to Azure
         uses: azure/login@v2
@@ -48,11 +51,14 @@ jobs:
           az webapp config appsettings set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.APP_NAME }} \
-            --settings WEBSITES_PORT=8000 SOVERDATA_WORKSPACE=examples/demo-workspace
+            --settings WEBSITES_PORT=8000 \
+                       PORT=8000 \
+                       SOVERDATA_WORKSPACE=examples/demo-workspace \
+                       WEBSITES_CONTAINER_START_TIME_LIMIT=600
           az webapp config container set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.APP_NAME }} \
-            --docker-custom-image-name ${{ env.IMAGE }} \
+            --docker-custom-image-name ${{ env.IMAGE_BASE }}:${{ env.IMAGE_TAG }} \
             --docker-registry-server-url https://${{ secrets.ACR_LOGIN_SERVER }} \
             --docker-registry-server-user ${{ secrets.ACR_USERNAME }} \
             --docker-registry-server-password ${{ secrets.ACR_PASSWORD }}
@@ -60,14 +66,18 @@ jobs:
       - name: Wait for app to start
         run: |
           URL="https://${{ env.APP_NAME }}.azurewebsites.net/api/workspace"
-          for i in {1..40}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$URL" || echo "000")
+          echo "Checking health at: $URL"
+          for i in {1..60}; do
+            # Use -L to follow redirects and -i to see headers if it fails
+            RESPONSE=$(curl -s -L -w "\n%{http_code}" --max-time 10 "$URL" || echo "curl_failed 000")
+            STATUS=$(echo "$RESPONSE" | tail -n 1)
             if [ "$STATUS" = "200" ]; then
               echo "App is live! status=$STATUS"
               exit 0
             fi
-            echo "Attempt $i/40 status=$STATUS"
-            sleep 15
+            echo "Attempt $i/60: Status=$STATUS. Waiting..."
+            sleep 10
           done
-          echo "App did not respond after 10 minutes"
+          echo "App did not respond with 200 after 10 minutes. Last response:"
+          echo "$RESPONSE"
           exit 1

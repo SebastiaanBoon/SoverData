@@ -255,8 +255,6 @@ def copilot_generate_pipeline(body: CopilotModel):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return ws_manager.list_lakehouse_tables()
-
 @api_router.get("/catalog/tables/{tier}/{name}/preview")
 def preview_table(tier: str, name: str, limit: int = 50):
     if tier not in ["bronze", "silver", "gold"]:
