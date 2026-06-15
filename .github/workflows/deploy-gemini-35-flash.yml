@@ -40,13 +40,10 @@ jobs:
             -x "examples/demo-workspace/runs/*" \
             -x "examples/demo-workspace/sales.db" \
             -x "*.snappy.parquet"
-          az webapp deploy \
+          az webapp deployment source config-zip \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --src-path deploy.zip \
-            --type zip \
-            --async true \
-            --build-remote true
+            --src deploy.zip
 
       - name: Wait for app to start
         run: |
