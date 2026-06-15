@@ -36,11 +36,12 @@ jobs:
             --settings \
               SOVERDATA_WORKSPACE=examples/demo-workspace \
               SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-              WEBSITE_RUN_FROM_PACKAGE=0
+              WEBSITE_RUN_FROM_PACKAGE=0 \
+              PYTHONPATH=/home/site/wwwroot/.python_packages
           az webapp config set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --startup-file "startup.sh"
+            --startup-file "python -m uvicorn server.api.main:app --host 0.0.0.0 --port 8000 --workers 1"
 
       - name: Zip and deploy to Azure Web App
         run: |
@@ -61,14 +62,14 @@ jobs:
       - name: Wait for app to start
         run: |
           URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/workspace"
-          for i in {1..36}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+          for i in {1..54}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$URL" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "App is live! (status=$STATUS)"
               exit 0
             fi
-            echo "Waiting for app... attempt $i/36 (status=$STATUS)"
-            sleep 10
+            echo "Waiting for app... attempt $i/54 (status=$STATUS)"
+            sleep 15
           done
-          echo "App did not respond after 6 minutes"
+          echo "App did not respond after ~13 minutes"
           exit 1
