@@ -45,7 +45,8 @@ jobs:
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --src-path deploy.zip \
             --type zip \
-            --async true
+            --async true \
+            --build-remote true
 
       - name: Wait for app to start
         run: |
