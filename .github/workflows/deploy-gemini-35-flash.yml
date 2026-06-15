@@ -23,7 +23,12 @@ jobs:
             --exclude "*.git*" \
             --exclude ".venv/*" \
             --exclude "*.pyc" \
-            --exclude "__pycache__/*"
+            --exclude "__pycache__/*" \
+            --exclude "examples/demo-workspace/lakehouse/*" \
+            --exclude "examples/demo-workspace/runs/*" \
+            --exclude "examples/demo-workspace/sales.db" \
+            --exclude "*.parquet" \
+            --exclude "*.snappy.parquet"
           az webapp deploy \
             --name soverdata-gemini-35-flash \
             --resource-group cafeboonresourcegroup \
