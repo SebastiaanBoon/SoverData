@@ -20,11 +20,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Ensure standard permissions
-RUN chmod +x startup.sh
+# Ensure standard permissions and keep a compatibility copy for any stale
+# App Service startup command that still points at /home/site/wwwroot/startup.sh.
+RUN chmod +x startup.sh \
+    && mkdir -p /home/site/wwwroot \
+    && cp startup.sh /home/site/wwwroot/startup.sh \
+    && chmod +x /home/site/wwwroot/startup.sh
 
 # Azure App Service uses this port by default or via WEBSITES_PORT
 EXPOSE 8000
 
-# Start application using uvicorn
-CMD ["python", "-m", "uvicorn", "server.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Start application using the same entrypoint Azure can call directly.
+CMD ["bash", "/app/startup.sh"]

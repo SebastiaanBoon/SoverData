@@ -55,6 +55,10 @@ jobs:
                        PORT=8000 \
                        SOVERDATA_WORKSPACE=examples/demo-workspace \
                        WEBSITES_CONTAINER_START_TIME_LIMIT=600
+          az webapp config set \
+            --resource-group cafeboonresourcegroup \
+            --name ${{ env.APP_NAME }} \
+            --startup-file ""
           az webapp config container set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.APP_NAME }} \
@@ -62,6 +66,9 @@ jobs:
             --docker-registry-server-url https://${{ secrets.ACR_LOGIN_SERVER }} \
             --docker-registry-server-user ${{ secrets.ACR_USERNAME }} \
             --docker-registry-server-password ${{ secrets.ACR_PASSWORD }}
+          az webapp restart \
+            --resource-group cafeboonresourcegroup \
+            --name ${{ env.APP_NAME }}
 
       - name: Wait for app to start
         run: |
