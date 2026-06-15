@@ -15,6 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies into bundle
+        run: pip install -r requirements.txt --target .python_packages
+
       - name: Log in to Azure
         uses: azure/login@v2
         with:
@@ -25,13 +33,16 @@ jobs:
           az webapp config appsettings set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true WEBSITE_RUN_FROM_PACKAGE=0 SOVERDATA_WORKSPACE=examples/demo-workspace
+            --settings \
+              SOVERDATA_WORKSPACE=examples/demo-workspace \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              WEBSITE_RUN_FROM_PACKAGE=0
           az webapp config set \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --startup-file "startup.sh"
 
-      - name: Deploy to Azure Web App
+      - name: Zip and deploy to Azure Web App
         run: |
           zip -r deploy.zip . \
             -x "*.git*" -x "*__pycache__*" -x "*.pyc" \
@@ -40,10 +51,12 @@ jobs:
             -x "examples/demo-workspace/runs/*" \
             -x "examples/demo-workspace/sales.db" \
             -x "*.snappy.parquet"
-          az webapp deployment source config-zip \
+          az webapp deploy \
             --resource-group cafeboonresourcegroup \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --src deploy.zip
+            --src-path deploy.zip \
+            --type zip \
+            --async true
 
       - name: Wait for app to start
         run: |
