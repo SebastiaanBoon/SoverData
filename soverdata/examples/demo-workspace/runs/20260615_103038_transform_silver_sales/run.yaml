@@ -1,0 +1,8 @@
+duration_seconds: 0.18
+exit_code: 0
+finished_at: '2026-06-15T10:30:38.610610+00:00'
+id: 20260615_103038_transform_silver_sales
+pipeline: transform_silver_sales
+started_at: '2026-06-15T10:30:38.435345+00:00'
+status: success
+type: sql

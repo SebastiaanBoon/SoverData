@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+*.log
+
+# UI
+ui/node_modules/
+ui/dist/
+
+# Data
+*.parquet
+*.duckdb
+
+# OS
+.DS_Store
+Thumbs.db

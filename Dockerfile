@@ -1,3 +1,12 @@
+# Stage 1: Build UI
+FROM node:20-slim AS ui-build
+WORKDIR /app/ui
+COPY soverdata/ui/package*.json ./
+RUN npm install
+COPY soverdata/ui/ ./
+RUN npm run build
+
+# Stage 2: Build App
 FROM python:3.11-slim
 
 # Install system dependencies
@@ -7,28 +16,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Set environment variables for better Python behavior in containers
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV PORT=8000
 
-# Install dependencies
-COPY requirements.txt .
+# Install dependencies from soverdata folder
+COPY soverdata/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy application code from soverdata folder to root of container
+COPY soverdata/ ./
 
-# Ensure standard permissions and keep a compatibility copy for any stale
-# App Service startup command that still points at /home/site/wwwroot/startup.sh.
-RUN chmod +x startup.sh \
+# Keep a compatibility copy for App Service startup commands that point at
+# /home/site/wwwroot/startup.sh even when running a custom Docker image.
+RUN chmod +x /app/startup.sh \
     && mkdir -p /home/site/wwwroot \
-    && cp startup.sh /home/site/wwwroot/startup.sh \
+    && cp /app/startup.sh /home/site/wwwroot/startup.sh \
     && chmod +x /home/site/wwwroot/startup.sh
 
-# Azure App Service uses this port by default or via WEBSITES_PORT
+# Copy built UI from stage 1
+COPY --from=ui-build /app/ui/dist ./ui/dist
+
 EXPOSE 8000
 
-# Start application using the same entrypoint Azure can call directly.
+# Entry point for Claude branch: server.main:app
 CMD ["bash", "/app/startup.sh"]

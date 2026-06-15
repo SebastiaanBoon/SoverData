@@ -1,0 +1,4 @@
+name: Demo Workspace
+description: Example workspace with sample sales data (Bronze/Silver lakehouse)
+format_version: "1.0"
+created_at: "2024-01-01T00:00:00+00:00"

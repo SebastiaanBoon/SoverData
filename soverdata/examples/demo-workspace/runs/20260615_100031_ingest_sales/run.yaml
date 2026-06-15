@@ -1,0 +1,8 @@
+duration_seconds: 1.0
+exit_code: 0
+finished_at: '2026-06-15T10:00:32.616058+00:00'
+id: 20260615_100031_ingest_sales
+pipeline: ingest_sales
+started_at: '2026-06-15T10:00:31.618676+00:00'
+status: success
+type: python

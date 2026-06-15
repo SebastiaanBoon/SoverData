@@ -1,0 +1,8 @@
+duration_seconds: 0.14
+exit_code: 0
+finished_at: '2026-06-15T10:30:56.740555+00:00'
+id: 20260615_103056_gold_top_products
+pipeline: gold_top_products
+started_at: '2026-06-15T10:30:56.597746+00:00'
+status: success
+type: sql

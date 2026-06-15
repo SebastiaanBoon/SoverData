@@ -1,0 +1,23 @@
+tables:
+- description: Raw sales data ingested from CSV
+  format: parquet
+  layer: bronze
+  lineage:
+    pipeline: pipelines/python/ingest_sales.py
+    source: connections.csv_sales
+  name: sales
+  path: lakehouse/bronze/sales
+- description: 'Created by SQL pipeline: transform_silver_sales'
+  format: parquet
+  layer: silver
+  lineage:
+    pipeline: pipelines/sql/transform_silver_sales.sql
+  name: sales_summary
+  path: lakehouse/silver/sales_summary
+- description: 'Created by SQL pipeline: gold_top_products'
+  format: parquet
+  layer: gold
+  lineage:
+    pipeline: pipelines/sql/gold_top_products.sql
+  name: top_products
+  path: lakehouse/gold/top_products
