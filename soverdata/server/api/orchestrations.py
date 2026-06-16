@@ -1,5 +1,5 @@
-"""Orchestrations API - ordered pipeline execution."""
-from typing import Literal
+"""Orchestrations API - DAG pipeline execution."""
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +16,21 @@ class OrchestrationStep(BaseModel):
     type: Literal["python", "sql"]
 
 
+class OrchestrationNode(BaseModel):
+    id: str
+    name: str
+    type: Literal["python", "sql"]
+    x: float = 100
+    y: float = 100
+
+
+class OrchestrationEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    condition: Literal["success", "failure", "completion"] = "success"
+
+
 class OrchestrationTrigger(BaseModel):
     id: str | None = None
     type: Literal["interval", "daily"]
@@ -27,7 +42,9 @@ class OrchestrationTrigger(BaseModel):
 class OrchestrationRequest(BaseModel):
     name: str
     description: str = ""
-    steps: list[OrchestrationStep]
+    nodes: list[OrchestrationNode] = Field(default_factory=list)
+    edges: list[OrchestrationEdge] = Field(default_factory=list)
+    steps: list[OrchestrationStep] = Field(default_factory=list)
     triggers: list[OrchestrationTrigger] = Field(default_factory=list)
 
 

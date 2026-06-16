@@ -53,11 +53,33 @@ async def run_due_triggers(workspace_path: Path) -> int:
 
 async def _run_triggered_orchestration(workspace_path: Path, name: str) -> None:
     try:
+        from server.orchestrator.orchestrations import run_orchestration
         await run_orchestration(workspace_path, name)
     except Exception:
         pass
     finally:
         _active_orchestrations.discard(name)
+
+
+async def fire_completion_triggers(workspace_path: Path, completed_name: str, run_status: str) -> None:
+    """Fire on_completion triggers of other orchestrations watching `completed_name`."""
+    for orchestration in wm.list_orchestrations(workspace_path):
+        name = orchestration.get("name")
+        if not name or name in _active_orchestrations:
+            continue
+        for trigger in orchestration.get("triggers", []):
+            if not trigger.get("enabled", True):
+                continue
+            if trigger.get("type") != "on_completion":
+                continue
+            if trigger.get("watch_orchestration") != completed_name:
+                continue
+            required_status = trigger.get("on_status", "success")
+            if required_status == "success" and run_status != "success":
+                continue
+            _active_orchestrations.add(name)
+            asyncio.create_task(_run_triggered_orchestration(workspace_path, name))
+            break
 
 
 def _is_trigger_due(trigger: dict, now: datetime) -> bool:

@@ -93,6 +93,21 @@ export interface OrchestrationStep {
   type: 'python' | 'sql'
 }
 
+export interface OrchestrationNode {
+  id: string
+  name: string
+  type: 'python' | 'sql'
+  x: number
+  y: number
+}
+
+export interface OrchestrationEdge {
+  id: string
+  source: string
+  target: string
+  condition?: 'success' | 'failure' | 'completion'
+}
+
 export interface OrchestrationTrigger {
   id?: string
   type: 'interval' | 'daily'
@@ -105,6 +120,8 @@ export interface OrchestrationTrigger {
 export interface Orchestration {
   name: string
   description?: string
+  nodes: OrchestrationNode[]
+  edges: OrchestrationEdge[]
   steps: OrchestrationStep[]
   triggers: OrchestrationTrigger[]
   path?: string
@@ -114,7 +131,8 @@ export interface Orchestration {
 }
 
 export interface OrchestrationRunStep {
-  index: number
+  node_id: string
+  index?: number
   name: string
   type: 'python' | 'sql'
   status: 'pending' | 'running' | 'success' | 'failed'
@@ -218,12 +236,21 @@ export const packagesApi = {
     api.post<PackageInfo>('/packages/install', { force }, { timeout: 10 * 60 * 1000 }).then(r => r.data),
 }
 
+export type OrchestrationPayload = {
+  name: string
+  description?: string
+  nodes: OrchestrationNode[]
+  edges: OrchestrationEdge[]
+  steps?: OrchestrationStep[]
+  triggers: OrchestrationTrigger[]
+}
+
 export const orchestrationApi = {
   list: () => api.get<Orchestration[]>('/orchestrations').then(r => r.data),
   get: (name: string) => api.get<Orchestration>(`/orchestrations/${name}`).then(r => r.data),
-  create: (data: { name: string; description?: string; steps: OrchestrationStep[]; triggers: OrchestrationTrigger[] }) =>
+  create: (data: OrchestrationPayload) =>
     api.post<Orchestration>('/orchestrations', data).then(r => r.data),
-  update: (name: string, data: { name: string; description?: string; steps: OrchestrationStep[]; triggers: OrchestrationTrigger[] }) =>
+  update: (name: string, data: OrchestrationPayload) =>
     api.put<Orchestration>(`/orchestrations/${name}`, data).then(r => r.data),
   delete: (name: string) => api.delete(`/orchestrations/${name}`).then(r => r.data),
   run: (name: string) =>

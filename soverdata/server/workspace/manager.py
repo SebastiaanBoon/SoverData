@@ -190,6 +190,7 @@ def list_orchestrations(root: Path) -> list[dict]:
         data["path"] = str(f.relative_to(root))
         data["modified"] = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat()
         data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
+        data = _upgrade_orchestration(data)
         result.append(data)
     return result
 
@@ -203,27 +204,31 @@ def get_orchestration(root: Path, name: str) -> dict:
     data["path"] = str(f.relative_to(root))
     trigger_state = _read_orchestration_trigger_state(root)
     data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
-    return data
+    return _upgrade_orchestration(data)
 
 
 def save_orchestration(root: Path, name: str, data: dict) -> dict:
     folder = root / "orchestrations"
     folder.mkdir(exist_ok=True)
     triggers = _normalize_triggers(data.get("triggers", []))
-    data = {
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+    saved = {
         "name": name,
         "description": data.get("description", ""),
-        "steps": data.get("steps", []),
+        "nodes": nodes,
+        "edges": edges,
+        "steps": [] if nodes else data.get("steps", []),
         "triggers": triggers,
         "updated_at": _now(),
     }
-    data.setdefault("created_at", _now())
+    saved.setdefault("created_at", _now())
     existing = folder / f"{name}.yaml"
     if existing.exists():
         current = _read_yaml(existing)
-        data["created_at"] = current.get("created_at", data["updated_at"])
-    _write_yaml(existing, data)
-    return {**data, "path": str(existing.relative_to(root))}
+        saved["created_at"] = current.get("created_at", saved["updated_at"])
+    _write_yaml(existing, saved)
+    return {**saved, "path": str(existing.relative_to(root))}
 
 
 def delete_orchestration(root: Path, name: str) -> None:
@@ -396,6 +401,27 @@ def _normalize_triggers(triggers: list[dict]) -> list[dict]:
         item.setdefault("type", "interval")
         normalized.append(item)
     return normalized
+
+
+def _upgrade_orchestration(data: dict) -> dict:
+    """Convert legacy steps list to DAG nodes/edges if needed."""
+    if data.get("nodes") or not data.get("steps"):
+        data.setdefault("nodes", [])
+        data.setdefault("edges", [])
+        return data
+    nodes = []
+    edges = []
+    prev_id = None
+    for i, step in enumerate(data["steps"]):
+        node_id = f"step_{i}"
+        nodes.append({"id": node_id, "name": step.get("name"), "type": step.get("type"),
+                      "x": i * 280 + 80, "y": 150})
+        if prev_id:
+            edges.append({"id": f"{prev_id}__{node_id}", "source": prev_id, "target": node_id})
+        prev_id = node_id
+    data["nodes"] = nodes
+    data["edges"] = edges
+    return data
 
 
 def _merge_trigger_state(triggers: list[dict], state: dict) -> list[dict]:
