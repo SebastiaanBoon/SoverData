@@ -22,10 +22,13 @@ class ConnectionQueryRequest(BaseModel):
     limit: int = 200
 
 
+SECRET_MASK = "********"
+
+
 @router.get("")
 def list_connections():
     ws = app_state.require_workspace()
-    return wm.list_connections(ws)
+    return [_public_connection(conn) for conn in wm.list_connections(ws)]
 
 
 @router.post("")
@@ -38,7 +41,7 @@ def create_connection(req: ConnectionRequest):
             "description": req.description,
             "config": req.config,
         }
-        return wm.save_connection(ws, req.name, data)
+        return _public_connection(wm.save_connection(ws, req.name, data))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -47,7 +50,7 @@ def create_connection(req: ConnectionRequest):
 def get_connection(name: str):
     ws = app_state.require_workspace()
     try:
-        return wm.get_connection(ws, name)
+        return _public_connection(wm.get_connection(ws, name))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Connection not found: {name}")
 
@@ -57,13 +60,14 @@ def update_connection(name: str, req: ConnectionRequest):
     ws = app_state.require_workspace()
     try:
         existing = wm.get_connection(ws, name)
+        config = _merge_masked_config(existing.get("config", {}), req.config)
         existing.update({
             "name": req.name,
             "type": req.type,
             "description": req.description,
-            "config": req.config,
+            "config": config,
         })
-        return wm.save_connection(ws, req.name, existing)
+        return _public_connection(wm.save_connection(ws, req.name, existing))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Connection not found: {name}")
     except Exception as e:
@@ -88,6 +92,21 @@ def test_connection(name: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Connection not found: {name}")
 
+    return _test_connection_config(ws, conn)
+
+
+@router.post("/test")
+def test_connection_draft(req: ConnectionRequest):
+    ws = app_state.require_workspace()
+    return _test_connection_config(ws, {
+        "name": req.name,
+        "type": req.type,
+        "description": req.description,
+        "config": req.config,
+    })
+
+
+def _test_connection_config(ws, conn: dict):
     conn_type = conn.get("type", "")
     config = conn.get("config", {})
 
@@ -134,7 +153,7 @@ def query_connection(name: str, req: ConnectionQueryRequest):
 
     conn_type = conn.get("type", "")
     config = conn.get("config", {})
-    sql = req.sql.strip()
+    sql = _strip_soverdata_directives(req.sql.strip())
     limit = max(1, min(req.limit, 5000))
 
     try:
@@ -177,6 +196,7 @@ def query_connection(name: str, req: ConnectionQueryRequest):
                 else:  # delta
                     c.execute("INSTALL delta; LOAD delta;")
                     inner = f"delta_scan('{target.as_posix()}')"
+                c.execute(f"CREATE OR REPLACE VIEW source AS SELECT * FROM {inner}")
                 wrapped = f"SELECT * FROM ({sql.rstrip(';')}) __q LIMIT {limit}" if sql.strip().upper().startswith("SELECT") else sql
                 res = c.execute(wrapped)
                 columns = [d[0] for d in res.description]
@@ -190,3 +210,52 @@ def query_connection(name: str, req: ConnectionQueryRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _public_connection(conn: dict) -> dict:
+    public = dict(conn)
+    public["config"] = _mask_config(public.get("config", {}))
+    return public
+
+
+def _mask_config(value):
+    if isinstance(value, dict):
+        return {key: _mask_config_item(key, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_mask_config(item) for item in value]
+    return value
+
+
+def _mask_config_item(key: str, value):
+    if _is_secret_key(key):
+        return SECRET_MASK if value not in (None, "") else value
+    return _mask_config(value)
+
+
+def _merge_masked_config(existing, incoming):
+    if not isinstance(existing, dict) or not isinstance(incoming, dict):
+        return incoming
+    merged = {}
+    for key, value in incoming.items():
+        if _is_secret_key(key) and value == SECRET_MASK:
+            merged[key] = existing.get(key, value)
+        elif isinstance(value, dict) and isinstance(existing.get(key), dict):
+            merged[key] = _merge_masked_config(existing[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _is_secret_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(part in lowered for part in ("password", "secret", "token", "key", "connection_string"))
+
+
+def _strip_soverdata_directives(sql: str) -> str:
+    import re
+    lines = []
+    for line in sql.splitlines():
+        if re.match(r"\s*--\s*(target|connection)\s*:", line, re.IGNORECASE):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()

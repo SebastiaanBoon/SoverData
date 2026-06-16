@@ -216,6 +216,7 @@ def save_orchestration(root: Path, name: str, data: dict) -> dict:
     saved = {
         "name": name,
         "description": data.get("description", ""),
+        "retries": int(data.get("retries", 2) or 0),
         "nodes": nodes,
         "edges": edges,
         "steps": [] if nodes else data.get("steps", []),

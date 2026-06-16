@@ -99,6 +99,7 @@ export interface OrchestrationNode {
   type: 'python' | 'sql'
   x: number
   y: number
+  retries?: number
 }
 
 export interface OrchestrationEdge {
@@ -120,6 +121,7 @@ export interface OrchestrationTrigger {
 export interface Orchestration {
   name: string
   description?: string
+  retries?: number
   nodes: OrchestrationNode[]
   edges: OrchestrationEdge[]
   steps: OrchestrationStep[]
@@ -135,13 +137,16 @@ export interface OrchestrationRunStep {
   index?: number
   name: string
   type: 'python' | 'sql'
-  status: 'pending' | 'running' | 'success' | 'failed'
+  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped'
   run_id?: string
   started_at?: string
   finished_at?: string
   duration_seconds?: number
   exit_code?: number
   error?: string
+  retries?: number
+  attempts?: number
+  orchestration_attempt?: number
 }
 
 export interface OrchestrationRun {
@@ -151,7 +156,11 @@ export interface OrchestrationRun {
   started_at: string
   finished_at?: string
   duration_seconds?: number
+  retries?: number
+  attempts?: number
+  current_attempt?: number
   steps: OrchestrationRunStep[]
+  attempt_history?: Array<{ attempt: number; status: 'success' | 'failed'; steps: OrchestrationRunStep[] }>
   error?: string
 }
 
@@ -213,6 +222,8 @@ export const connApi = {
     api.put<Connection>(`/connections/${name}`, data).then(r => r.data),
   delete: (name: string) => api.delete(`/connections/${name}`).then(r => r.data),
   test: (name: string) => api.post<{ status: string; message: string }>(`/connections/${name}/test`).then(r => r.data),
+  testDraft: (data: Omit<Connection, 'created_at' | 'updated_at'>) =>
+    api.post<{ status: string; message: string }>('/connections/test', data).then(r => r.data),
   query: (name: string, sql: string, limit = 200) =>
     api.post<QueryResult>(`/connections/${name}/query`, { sql, limit }).then(r => r.data),
 }
@@ -241,6 +252,7 @@ export const packagesApi = {
 export type OrchestrationPayload = {
   name: string
   description?: string
+  retries?: number
   nodes: OrchestrationNode[]
   edges: OrchestrationEdge[]
   steps?: OrchestrationStep[]

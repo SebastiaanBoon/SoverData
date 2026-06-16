@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import Editor from '@monaco-editor/react'
-import { queryApi, QueryResult } from '../api/client'
+import { catalogApi, queryApi, QueryResult } from '../api/client'
 import { useWorkspace } from '../context/WorkspaceContext'
 import api from '../api/client'
 
@@ -8,14 +8,14 @@ interface TableRef { name: string; layer: string; view_name: string }
 
 const EXAMPLE_QUERIES = [
   { label: 'All views', sql: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY 1;" },
-  { label: 'Sample Bronze sales', sql: 'SELECT * FROM bronze__sales LIMIT 20;' },
-  { label: 'Row count', sql: 'SELECT COUNT(*) AS total_rows FROM bronze__sales;' },
-  { label: 'Revenue by category', sql: "SELECT category, COUNT(*) AS orders, ROUND(SUM(revenue),2) AS revenue\nFROM bronze__sales\nGROUP BY category\nORDER BY revenue DESC;" },
+  { label: 'Sample Bronze sales', sql: 'SELECT\n    order_id,\n    order_date,\n    category,\n    product,\n    quantity,\n    unit_price,\n    revenue,\n    region,\n    channel\nFROM bronze.sales\nLIMIT 20;' },
+  { label: 'Row count', sql: 'SELECT COUNT(*) AS total_rows FROM bronze.sales;' },
+  { label: 'Revenue by category', sql: "SELECT category, COUNT(*) AS orders, ROUND(SUM(revenue),2) AS revenue\nFROM bronze.sales\nGROUP BY category\nORDER BY revenue DESC;" },
 ]
 
 export default function QueryPage() {
   const { workspace } = useWorkspace()
-  const [sql, setSql] = useState('-- Write SQL here. Tables are registered as bronze__<name>, silver__<name>, gold__<name>\nSELECT 1 + 1 AS answer;')
+  const [sql, setSql] = useState('-- Write SQL here. Tables are registered as bronze.<name>, silver.<name>, gold.<name>\nSELECT 1 + 1 AS answer;')
   const [result, setResult] = useState<QueryResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -38,11 +38,22 @@ export default function QueryPage() {
     finally { setLoading(false) }
   }
 
-  const insertTable = (viewName: string) => {
+  const insertTable = async (table: TableRef) => {
+    let columns: string[] = []
+    try {
+      const schema = await catalogApi.schema(table.layer, table.name)
+      columns = (schema.schema || []).map((col: { name: string }) => col.name)
+    } catch {
+      columns = []
+    }
+    const columnList = columns.length
+      ? columns.map(c => `    ${c}`).join(',\n')
+      : '    -- choose columns'
     setSql(prev => {
       const trimmed = prev.trim()
-      if (!trimmed || trimmed.startsWith('--')) return `SELECT * FROM ${viewName} LIMIT 50;`
-      return prev + `\n-- ${viewName}\n`
+      const query = `SELECT\n${columnList}\nFROM ${table.view_name}\nLIMIT 50;`
+      if (!trimmed || trimmed.startsWith('--')) return query
+      return prev + `\n\n${query}\n`
     })
   }
 
@@ -69,7 +80,7 @@ export default function QueryPage() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="page-header">
         <h1>SQL Query</h1>
-        <p>Ad-hoc DuckDB SQL over the lakehouse. Tables: <code>bronze__name</code>, <code>silver__name</code>, <code>gold__name</code>.</p>
+        <p>Ad-hoc DuckDB SQL over the lakehouse. Tables: <code>bronze.name</code>, <code>silver.name</code>, <code>gold.name</code>.</p>
       </div>
       <div className="page-body" style={{ flex: 1, display: 'flex', gap: 16, flexDirection: 'column', minHeight: 0 }}>
         <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
@@ -92,7 +103,7 @@ export default function QueryPage() {
                       <div
                         key={t.view_name}
                         title={`Click to insert: ${t.view_name}`}
-                        onClick={() => insertTable(t.view_name)}
+                        onClick={() => insertTable(t)}
                         style={{
                           padding: '5px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
                           background: 'var(--bg-3)', marginBottom: 3, fontFamily: 'var(--font-mono)',

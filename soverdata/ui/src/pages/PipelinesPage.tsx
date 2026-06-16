@@ -30,11 +30,14 @@ print(f"Written {len(df)} rows to {out_file}")
 
 const DEFAULT_SQL = `-- SQL activity
 -- Optional: write results to lakehouse with "-- target: silver.table_name"
--- Optional: use a saved connection with "-- connection: my_conn"
--- Available lakehouse tables: bronze__<name>, silver__<name>, gold__<name>
+-- Add an external connection from Flow when this SQL should run outside the lakehouse.
+-- Available lakehouse tables: bronze.<name>, silver.<name>, gold.<name>
 
-SELECT *
-FROM bronze__example
+SELECT
+    id,
+    name,
+    value
+FROM bronze.example
 LIMIT 10;
 `
 
@@ -51,12 +54,12 @@ function hasSelectStar(code: string): boolean {
 }
 
 function getDirective(code: string, key: string): string {
-  const m = code.match(new RegExp(`--\\s*${key}\\s*:\\s*([^\\n]+)`, 'i'))
+  const m = code.match(new RegExp(`^\\s*--\\s*${key}\\s*:\\s*([^\\n]+)\\s*$`, 'im'))
   return m ? m[1].trim() : ''
 }
 
 function setDirective(code: string, key: string, value: string): string {
-  const regex = new RegExp(`--\\s*${key}\\s*:[^\\n]*\\n?`, 'gi')
+  const regex = new RegExp(`^\\s*--\\s*${key}\\s*:[^\\n]*\\n?`, 'gim')
   const line = value ? `-- ${key}: ${value}\n` : ''
   if (regex.test(code)) {
     return value ? code.replace(regex, line) : code.replace(regex, '')
@@ -322,6 +325,7 @@ function ActivityModal({ initial, onClose, onSaved }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) { setError('Name is required.'); return }
+    if (type === 'sql' && hasSelectStar(code)) { setError('Name the columns in SQL. SELECT * is not allowed.'); return }
     setError(''); setSaving(true)
     try {
       if (initial) {
@@ -366,7 +370,7 @@ function ActivityModal({ initial, onClose, onSaved }: {
             </div>
             {type === 'sql' && (
               <div className="form-group">
-                <label>Connection</label>
+                <label>External connection</label>
                 <select value={selectedConn} onChange={e => handleConnChange(e.target.value)}>
                   <option value="">Lakehouse (DuckDB)</option>
                   {dbConnections.map(c => (

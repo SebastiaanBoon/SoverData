@@ -1,12 +1,12 @@
-"""DAG orchestration runner — parallel execution with per-edge conditions."""
+"""DAG orchestration runner with flow-level and activity-level retries."""
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from server.orchestrator.scheduler import run_pipeline, fire_completion_triggers
+from server.orchestrator.scheduler import fire_completion_triggers, run_pipeline
 from server.workspace import manager as wm
 
 
@@ -19,44 +19,93 @@ def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-# ── Edge condition helpers ────────────────────────────────────────
-
 def _condition_satisfied(edge: dict, source_status: str) -> bool:
-    """Return True if edge condition is met given the source node's final status."""
     cond = edge.get("condition", "success")
     if cond == "success":
         return source_status == "success"
     if cond == "failure":
         return source_status == "failed"
-    return True  # completion — any status counts
+    return True
 
 
 def _condition_can_ever_be_met(edge: dict, source_status: str) -> bool:
-    """Return False if the source is done and the condition can never be satisfied."""
     cond = edge.get("condition", "success")
     if cond == "success":
         return source_status == "success"
     if cond == "failure":
         return source_status == "failed"
-    return True  # completion always satisfiable once source finishes
+    return True
 
-
-# ── Runner ────────────────────────────────────────────────────────
 
 async def run_orchestration(workspace_path: Path, name: str) -> dict:
-    """Execute an orchestration DAG. Edges carry success/failure/completion conditions."""
+    """Execute an orchestration DAG, retrying the entire flow when configured."""
     definition = wm.get_orchestration(workspace_path, name)
-
     nodes: list[dict] = definition.get("nodes", [])
     edges: list[dict] = definition.get("edges", [])
+    retries = max(0, int(definition.get("retries", 2) or 0))
 
     if not nodes:
-        raise ValueError("Orchestration has no pipeline blocks.")
+        raise ValueError("Orchestration has no activities.")
 
     run_id = _run_id(name)
     started = datetime.now(tz=timezone.utc)
+    run_meta: dict[str, Any] = {
+        "id": run_id,
+        "orchestration": name,
+        "status": "running",
+        "started_at": started.isoformat(),
+        "finished_at": None,
+        "duration_seconds": None,
+        "retries": retries,
+        "attempts": 0,
+        "current_attempt": 0,
+        "steps": [],
+        "attempt_history": [],
+    }
+    wm.save_orchestration_run(workspace_path, run_meta)
 
-    step_meta: dict[str, dict[str, Any]] = {
+    final_status = "failed"
+    for attempt in range(retries + 1):
+        step_meta = _new_step_meta(nodes, attempt + 1)
+        run_meta.update(
+            status="running",
+            attempts=attempt + 1,
+            current_attempt=attempt + 1,
+            steps=list(step_meta.values()),
+        )
+        wm.save_orchestration_run(workspace_path, run_meta)
+
+        def _save() -> None:
+            run_meta["steps"] = list(step_meta.values())
+            wm.save_orchestration_run(workspace_path, run_meta)
+
+        final_status = await _run_dag(workspace_path, nodes, edges, step_meta, _save)
+        run_meta["steps"] = list(step_meta.values())
+        run_meta["attempt_history"].append({
+            "attempt": attempt + 1,
+            "status": final_status,
+            "steps": [dict(step) for step in step_meta.values()],
+        })
+        wm.save_orchestration_run(workspace_path, run_meta)
+
+        if final_status == "success":
+            break
+        if attempt < retries:
+            await asyncio.sleep(1)
+
+    finished = datetime.now(tz=timezone.utc)
+    run_meta.update(
+        status=final_status,
+        finished_at=finished.isoformat(),
+        duration_seconds=round((finished - started).total_seconds(), 2),
+    )
+    wm.save_orchestration_run(workspace_path, run_meta)
+    asyncio.create_task(fire_completion_triggers(workspace_path, name, final_status))
+    return run_meta
+
+
+def _new_step_meta(nodes: list[dict], orchestration_attempt: int) -> dict[str, dict[str, Any]]:
+    return {
         node["id"]: {
             "node_id": node["id"],
             "name": node.get("name"),
@@ -68,40 +117,33 @@ async def run_orchestration(workspace_path: Path, name: str) -> dict:
             "duration_seconds": None,
             "exit_code": None,
             "error": None,
+            "retries": int(node.get("retries", 0) or 0),
+            "attempts": 0,
+            "orchestration_attempt": orchestration_attempt,
         }
         for node in nodes
     }
 
-    run_meta: dict[str, Any] = {
-        "id": run_id,
-        "orchestration": name,
-        "status": "running",
-        "started_at": started.isoformat(),
-        "finished_at": None,
-        "duration_seconds": None,
-        "steps": list(step_meta.values()),
-    }
-    wm.save_orchestration_run(workspace_path, run_meta)
 
-    def _save() -> None:
-        run_meta["steps"] = list(step_meta.values())
-        wm.save_orchestration_run(workspace_path, run_meta)
-
-    # Index edges by target for quick lookup
+async def _run_dag(
+    workspace_path: Path,
+    nodes: list[dict],
+    edges: list[dict],
+    step_meta: dict[str, dict[str, Any]],
+    save: Callable[[], None],
+) -> str:
     edges_by_target: dict[str, list[dict]] = {n["id"]: [] for n in nodes}
     for edge in edges:
-        edges_by_target[edge["target"]].append(edge)
+        edges_by_target.setdefault(edge["target"], []).append(edge)
 
     node_map = {n["id"]: n for n in nodes}
     all_ids = set(node_map)
-
-    completed: dict[str, str] = {}   # node_id -> 'success' | 'failed' | 'skipped'
+    completed: dict[str, str] = {}
     running_tasks: dict[str, asyncio.Task] = {}
     overall_status = "success"
 
-    def _ready(nid: str) -> bool:
-        """All incoming edges have their conditions satisfied."""
-        for edge in edges_by_target[nid]:
+    def ready(nid: str) -> bool:
+        for edge in edges_by_target.get(nid, []):
             src_status = completed.get(edge["source"])
             if src_status is None:
                 return False
@@ -109,23 +151,21 @@ async def run_orchestration(workspace_path: Path, name: str) -> dict:
                 return False
         return True
 
-    def _permanently_blocked(nid: str) -> bool:
-        """At least one incoming edge can never be satisfied."""
-        for edge in edges_by_target[nid]:
+    def permanently_blocked(nid: str) -> bool:
+        for edge in edges_by_target.get(nid, []):
             src_status = completed.get(edge["source"])
             if src_status is None:
-                continue  # source not yet done
+                continue
             if not _condition_can_ever_be_met(edge, src_status):
                 return True
         return False
 
     try:
         while len(completed) < len(nodes):
-            # Mark nodes that are permanently blocked (condition can never be met)
             for nid in all_ids:
                 if nid in completed or nid in running_tasks:
                     continue
-                if _permanently_blocked(nid):
+                if permanently_blocked(nid):
                     completed[nid] = "skipped"
                     step_meta[nid].update(
                         status="skipped",
@@ -133,19 +173,18 @@ async def run_orchestration(workspace_path: Path, name: str) -> dict:
                         finished_at=_now(),
                     )
 
-            # Launch all nodes whose conditions are now satisfied
             for nid in all_ids:
                 if nid in completed or nid in running_tasks:
                     continue
-                if _ready(nid):
+                if ready(nid):
                     step_meta[nid].update(status="running", started_at=_now())
                     running_tasks[nid] = asyncio.create_task(
                         _run_node(workspace_path, node_map[nid], step_meta[nid])
                     )
-            _save()
+            save()
 
             if not running_tasks:
-                break  # nothing left to wait for
+                break
 
             done, _ = await asyncio.wait(
                 running_tasks.values(), return_when=asyncio.FIRST_COMPLETED
@@ -157,37 +196,62 @@ async def run_orchestration(workspace_path: Path, name: str) -> dict:
                 completed[nid] = node_status
                 if node_status == "failed":
                     overall_status = "failed"
-            _save()
-
+            save()
     except Exception as exc:
         overall_status = "failed"
         for nid in list(running_tasks):
             step_meta[nid].update(status="failed", error=str(exc), finished_at=_now())
 
-    # If any node failed or was skipped due to a condition, mark overall as failed
     if any(s in ("failed", "skipped") for s in completed.values()):
         overall_status = "failed"
-
-    finished = datetime.now(tz=timezone.utc)
-    run_meta.update(
-        status=overall_status,
-        finished_at=finished.isoformat(),
-        duration_seconds=round((finished - started).total_seconds(), 2),
-    )
-    _save()
-    asyncio.create_task(fire_completion_triggers(workspace_path, name, overall_status))
-    return run_meta
+    return overall_status
 
 
 async def _run_node(workspace_path: Path, node: dict, step: dict) -> None:
-    try:
-        pipeline_run = await run_pipeline(workspace_path, node["name"], node["type"])
-        step.update(
-            status=pipeline_run.get("status", "failed"),
-            run_id=pipeline_run.get("id"),
-            finished_at=pipeline_run.get("finished_at"),
-            duration_seconds=pipeline_run.get("duration_seconds"),
-            exit_code=pipeline_run.get("exit_code"),
-        )
-    except Exception as exc:
-        step.update(status="failed", error=str(exc), finished_at=_now())
+    retries = max(0, int(node.get("retries", 0) or 0))
+    last_error = None
+    for attempt in range(retries + 1):
+        step.update(status="running", attempts=attempt + 1, error=last_error)
+        try:
+            target_layer = _node_layer(node) if node.get("type") == "sql" else None
+            pipeline_run = await run_pipeline(
+                workspace_path,
+                node["name"],
+                node["type"],
+                target_layer=target_layer,
+                target_table=_safe_name(node["name"]) if target_layer else None,
+            )
+            status = pipeline_run.get("status", "failed")
+            step.update(
+                status=status,
+                run_id=pipeline_run.get("id"),
+                finished_at=pipeline_run.get("finished_at"),
+                duration_seconds=pipeline_run.get("duration_seconds"),
+                exit_code=pipeline_run.get("exit_code"),
+                error=None if status == "success" else f"Activity attempt {attempt + 1} failed.",
+            )
+            if status == "success":
+                return
+            last_error = step.get("error")
+        except Exception as exc:
+            last_error = str(exc)
+            step.update(status="failed", error=last_error, finished_at=_now(), exit_code=1)
+
+        if attempt < retries:
+            await asyncio.sleep(1)
+
+    step.update(status="failed", error=last_error or "Activity failed after retries.", finished_at=_now())
+
+
+def _node_layer(node: dict) -> str | None:
+    node_id = str(node.get("id", "")).lower()
+    for layer in ("bronze", "silver", "gold"):
+        if node_id.startswith(f"{layer}_"):
+            return layer
+    return None
+
+
+def _safe_name(value: str) -> str:
+    import re
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", value.strip().lower()).strip("_")
+    return cleaned or "new_table"

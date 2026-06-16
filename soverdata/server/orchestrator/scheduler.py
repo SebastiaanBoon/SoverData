@@ -126,6 +126,8 @@ async def run_pipeline(
     workspace_path: Path,
     name: str,
     pipeline_type: str,
+    target_layer: str | None = None,
+    target_table: str | None = None,
 ) -> dict:
     """Execute a pipeline and record the run. Returns the run metadata."""
     run_id = _run_id(name)
@@ -151,7 +153,13 @@ async def run_pipeline(
         if pipeline_type == "python":
             stdout_buf, stderr_buf, exit_code = await _run_python(workspace_path, name, run_id)
         elif pipeline_type == "sql":
-            stdout_buf, stderr_buf, exit_code = await _run_sql(workspace_path, name, run_id)
+            stdout_buf, stderr_buf, exit_code = await _run_sql(
+                workspace_path,
+                name,
+                run_id,
+                default_target_layer=target_layer,
+                default_target_table=target_table,
+            )
         else:
             raise ValueError(f"Unknown pipeline type: {pipeline_type}")
 
@@ -208,7 +216,13 @@ async def _run_python(workspace_path: Path, name: str, run_id: str) -> tuple[str
     )
 
 
-async def _run_sql(workspace_path: Path, name: str, run_id: str) -> tuple[str, str, int]:
+async def _run_sql(
+    workspace_path: Path,
+    name: str,
+    run_id: str,
+    default_target_layer: str | None = None,
+    default_target_table: str | None = None,
+) -> tuple[str, str, int]:
     """Run a SQL pipeline via DuckDB.
 
     If the SQL file contains a directive ``-- target: <layer>.<table>`` (anywhere
@@ -224,11 +238,14 @@ async def _run_sql(workspace_path: Path, name: str, run_id: str) -> tuple[str, s
 
     # Parse optional target directive: -- target: silver.sales_summary
     target_layer, target_table = _parse_target(sql_text)
+    connection_name = _parse_connection(sql_text)
+    if not target_layer and default_target_layer:
+        target_layer = default_target_layer
+        target_table = default_target_table or _safe_name(name)
 
     try:
         import duckdb, re
-        # Strip comment lines so DuckDB can execute cleanly
-        clean_sql = sql_text
+        clean_sql = _strip_soverdata_directives(sql_text)
 
         if target_layer and target_table:
             out_path = workspace_path / "lakehouse" / target_layer / target_table
@@ -245,11 +262,17 @@ async def _run_sql(workspace_path: Path, name: str, run_id: str) -> tuple[str, s
                 from server.engine.query import _register_lakehouse
                 _register_lakehouse(conn, workspace_path)
 
-                # Wrap query in COPY TO ... (PARQUET)
                 inner = clean_sql.strip().rstrip(";")
-                conn.execute(
-                    f"COPY ({inner}) TO '{parquet_out.as_posix()}' (FORMAT PARQUET)"
-                )
+                if connection_name:
+                    df = _read_connection_dataframe(workspace_path, connection_name, inner)
+                    conn.register("__source_result", df)
+                    conn.execute(
+                        f"COPY (SELECT * FROM __source_result) TO '{parquet_out.as_posix()}' (FORMAT PARQUET)"
+                    )
+                else:
+                    conn.execute(
+                        f"COPY ({inner}) TO '{parquet_out.as_posix()}' (FORMAT PARQUET)"
+                    )
                 row_count = conn.execute(f"SELECT COUNT(*) FROM '{parquet_out.as_posix()}'").fetchone()[0]
             finally:
                 conn.close()
@@ -267,7 +290,7 @@ async def _run_sql(workspace_path: Path, name: str, run_id: str) -> tuple[str, s
             stdout = (
                 f"Written {row_count} rows to "
                 f"{parquet_out.relative_to(workspace_path).as_posix()}\n"
-                f"Table registered in catalog as {target_layer}__{target_table}\n"
+                f"Table registered in catalog as {target_layer}.{target_table}\n"
             )
             return stdout, "", 0
         else:
@@ -281,10 +304,73 @@ async def _run_sql(workspace_path: Path, name: str, run_id: str) -> tuple[str, s
 def _parse_target(sql: str) -> tuple[str | None, str | None]:
     """Parse ``-- target: layer.table`` directive from SQL text."""
     import re
-    m = re.search(r"--\s*target\s*:\s*(\w+)\.(\w+)", sql, re.IGNORECASE)
+    m = re.search(r"^\s*--\s*target\s*:\s*(\w+)\.(\w+)\s*$", sql, re.IGNORECASE | re.MULTILINE)
     if m:
         return m.group(1).lower(), m.group(2).lower()
     return None, None
+
+
+def _parse_connection(sql: str) -> str | None:
+    import re
+    m = re.search(r"^\s*--\s*connection\s*:\s*([^\s]+)\s*$", sql, re.IGNORECASE | re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
+def _strip_soverdata_directives(sql: str) -> str:
+    import re
+    lines = []
+    for line in sql.splitlines():
+        if re.match(r"\s*--\s*(target|connection)\s*:", line, re.IGNORECASE):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _safe_name(value: str) -> str:
+    import re
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", value.strip().lower()).strip("_")
+    return cleaned or "new_table"
+
+
+def _read_connection_dataframe(workspace_path: Path, connection_name: str, sql: str):
+    conn_meta = wm.get_connection(workspace_path, connection_name)
+    conn_type = conn_meta.get("type", "")
+    config = conn_meta.get("config", {})
+
+    if conn_type in ("postgres", "mysql", "mssql"):
+        import pandas as pd
+        import sqlalchemy
+        engine = sqlalchemy.create_engine(config.get("connection_string", ""))
+        return pd.read_sql_query(sqlalchemy.text(sql), engine)
+
+    if conn_type == "duckdb":
+        import duckdb
+        c = duckdb.connect(config.get("path", ":memory:"))
+        try:
+            return c.execute(sql).fetchdf()
+        finally:
+            c.close()
+
+    if conn_type in ("csv", "parquet", "delta"):
+        import duckdb
+        target = Path(config.get("path", ""))
+        if not target.is_absolute():
+            target = workspace_path / target
+        c = duckdb.connect(":memory:")
+        try:
+            if conn_type == "csv":
+                c.execute(f"CREATE OR REPLACE VIEW source AS SELECT * FROM read_csv_auto('{target.as_posix()}')")
+            elif conn_type == "parquet":
+                parquet_path = f"{target.as_posix()}/*.parquet" if target.is_dir() else target.as_posix()
+                c.execute(f"CREATE OR REPLACE VIEW source AS SELECT * FROM read_parquet('{parquet_path}')")
+            else:
+                c.execute("INSTALL delta; LOAD delta;")
+                c.execute(f"CREATE OR REPLACE VIEW source AS SELECT * FROM delta_scan('{target.as_posix()}')")
+            return c.execute(sql).fetchdf()
+        finally:
+            c.close()
+
+    raise ValueError(f"Query not supported for connection type: {conn_type}")
 
 
 def _pipeline_env(workspace_path: Path, run_id: str) -> dict:

@@ -22,6 +22,7 @@ class OrchestrationNode(BaseModel):
     type: Literal["python", "sql"]
     x: float = 100
     y: float = 100
+    retries: int = Field(default=2, ge=0, le=10)
 
 
 class OrchestrationEdge(BaseModel):
@@ -42,6 +43,7 @@ class OrchestrationTrigger(BaseModel):
 class OrchestrationRequest(BaseModel):
     name: str
     description: str = ""
+    retries: int = Field(default=2, ge=0, le=10)
     nodes: list[OrchestrationNode] = Field(default_factory=list)
     edges: list[OrchestrationEdge] = Field(default_factory=list)
     steps: list[OrchestrationStep] = Field(default_factory=list)

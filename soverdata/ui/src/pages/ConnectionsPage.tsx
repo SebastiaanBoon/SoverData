@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { connApi, Connection } from '../api/client'
 import { useWorkspace } from '../context/WorkspaceContext'
 
-const CONNECTION_TYPES = ['csv', 'parquet', 'delta', 'duckdb', 'postgres', 'mysql', 'mssql', 'rest']
+const CONNECTION_TYPES = ['mssql', 'postgres', 'mysql']
 
 export default function ConnectionsPage() {
   const { workspace } = useWorkspace()
@@ -54,9 +54,12 @@ export default function ConnectionsPage() {
     <div>
       <div className="page-header">
         <h1>Connections</h1>
-        <p>Define data sources — CSV files, databases, REST APIs, and more.</p>
+        <p>Define database sources for SQL activities.</p>
       </div>
       <div className="page-body">
+        <div className="alert alert-info">
+          Connections are for external databases only. Lakehouse files are available in Data, not here.
+        </div>
         <div className="toolbar">
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>
             + Add Connection
@@ -130,15 +133,15 @@ function ConnectionModal({ initial, onClose, onSaved }: {
   onSaved: () => void
 }) {
   const [name, setName] = useState(initial?.name ?? '')
-  const [type, setType] = useState(initial?.type ?? 'csv')
+  const [type, setType] = useState(initial?.type ?? 'mssql')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [configStr, setConfigStr] = useState(initial ? JSON.stringify(initial.config, null, 2) : '{}')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const configPlaceholder = type === 'csv' ? '{"path": "data/sales.csv"}'
-    : type === 'postgres' ? '{"connection_string": "postgresql://user:pass@host/db"}'
-    : type === 'rest' ? '{"base_url": "https://api.example.com", "headers": {}}'
+  const configPlaceholder = type === 'postgres' ? '{"connection_string": "postgresql://user:pass@host/db"}'
+    : type === 'mysql' ? '{"connection_string": "mysql+pymysql://user:pass@host/db"}'
+    : type === 'mssql' ? '{"connection_string": "mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+17+for+SQL+Server"}'
     : '{}'
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -181,7 +184,7 @@ function ConnectionModal({ initial, onClose, onSaved }: {
             <div className="form-group">
               <label>Type</label>
               <select value={type} onChange={e => setType(e.target.value)}>
-                {CONNECTION_TYPES.map(t => <option key={t}>{t}</option>)}
+                {CONNECTION_TYPES.map(t => <option key={t} value={t}>{connectionTypeLabel(t)}</option>)}
               </select>
             </div>
           </div>
@@ -228,4 +231,11 @@ function errMsg(e: unknown): string {
     return r?.data?.detail ?? 'Error'
   }
   return String(e)
+}
+
+function connectionTypeLabel(type: string): string {
+  if (type === 'mssql') return 'SQL Server'
+  if (type === 'postgres') return 'Postgres'
+  if (type === 'mysql') return 'MySQL'
+  return type
 }

@@ -1,15 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 
-const navItems = [
-  { to: '/', label: 'Workspace', icon: '⬡' },
-  { to: '/files', label: 'Files', icon: '[]' },
-  { to: '/connections', label: 'Connections', icon: '⚡' },
-  { to: '/pipelines', label: 'Activities', icon: '▶' },
-  { to: '/packages', label: 'Packages', icon: '+' },
-  { to: '/orchestrations', label: 'Orchestrations', icon: '>>' },
-  { to: '/runs', label: 'Runs', icon: '◎' },
-  { to: '/catalog', label: 'Catalog', icon: '◫' },
+const analystItems = [
+  { to: '/', label: 'Home', icon: 'H' },
+  { to: '/catalog', label: 'Data', icon: 'D' },
+  { to: '/pipelines', label: 'Activities', icon: 'A' },
+  { to: '/orchestrations', label: 'Flow', icon: 'F' },
+  { to: '/runs', label: 'Runs', icon: 'R' },
 ]
 
 export function Sidebar() {
@@ -26,7 +23,7 @@ export function Sidebar() {
         </div>
       )}
       <nav className="sidebar-nav">
-        {navItems.map(item => (
+        {analystItems.map(item => (
           <NavLink
             key={item.to}
             to={item.to}

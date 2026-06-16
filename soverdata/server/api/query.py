@@ -29,6 +29,6 @@ def list_query_tables():
     ws = app_state.require_workspace()
     tables = engine.scan_lakehouse_tables(ws)
     return [
-        {**t, "view_name": f"{t['layer']}__{t['name']}"}
+        {**t, "view_name": f"{t['layer']}.{t['name']}"}
         for t in tables
     ]
