@@ -35,6 +35,54 @@ def get_workspace():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/scan")
+def scan_workspaces():
+    """Scan common locations for workspace.yaml files and return found workspaces."""
+    import os
+    import yaml as _yaml
+
+    found = []
+    seen: set[str] = set()
+
+    _SKIP = {
+        "node_modules", ".git", "__pycache__", ".venv", "venv",
+        "AppData", "site-packages", "$Recycle.Bin", "Windows",
+    }
+
+    def _walk(root: str):
+        try:
+            entries = os.scandir(root)
+        except OSError:
+            return
+        dirs = []
+        with entries:
+            for e in entries:
+                try:
+                    if e.is_file(follow_symlinks=False) and e.name == "workspace.yaml":
+                        ws_dir = root
+                        if ws_dir not in seen:
+                            seen.add(ws_dir)
+                            try:
+                                with open(e.path, encoding="utf-8") as f:
+                                    cfg = _yaml.safe_load(f) or {}
+                                found.append({
+                                    "path": ws_dir,
+                                    "name": cfg.get("name") or Path(ws_dir).name,
+                                    "description": cfg.get("description", ""),
+                                })
+                            except Exception:
+                                found.append({"path": ws_dir, "name": Path(ws_dir).name, "description": ""})
+                    elif e.is_dir(follow_symlinks=False) and e.name not in _SKIP:
+                        dirs.append(e.path)
+                except OSError:
+                    continue
+        for d in dirs:
+            _walk(d)
+
+    _walk(str(Path.home()))
+    return {"workspaces": found}
+
+
 @router.get("/browse")
 def browse_folders(path: str | None = None):
     """Browse local folders so users can choose a workspace path."""

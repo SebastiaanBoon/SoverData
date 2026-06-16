@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { lakehouseApi, LakehouseRetentionSettings, WorkspaceBrowserList, wsApi } from '../api/client'
+import { lakehouseApi, LakehouseRetentionSettings, ScannedWorkspace, WorkspaceBrowserList, wsApi } from '../api/client'
 import { useWorkspace } from '../context/WorkspaceContext'
 import api from '../api/client'
 
@@ -38,6 +38,8 @@ export default function WorkspacePage() {
   const [browser, setBrowser] = useState<WorkspaceBrowserList | null>(null)
   const [browserLoading, setBrowserLoading] = useState(false)
   const [browserError, setBrowserError] = useState('')
+  const [scanned, setScanned] = useState<ScannedWorkspace[]>([])
+  const [scanning, setScanning] = useState(false)
   const [stats, setStats] = useState<Stats | null>(null)
   const [retention, setRetention] = useState<LakehouseRetentionSettings | null>(null)
   const [retentionMessage, setRetentionMessage] = useState('')
@@ -56,9 +58,14 @@ export default function WorkspacePage() {
     if (!mode) {
       setBrowser(null)
       setBrowserError('')
+      setScanned([])
       return
     }
     browseTo()
+    if (mode === 'open') {
+      setScanning(true)
+      wsApi.scan().then(setScanned).catch(() => setScanned([])).finally(() => setScanning(false))
+    }
   }, [mode])
 
   const browseTo = async (nextPath?: string) => {
@@ -79,7 +86,8 @@ export default function WorkspacePage() {
     if (mode === 'create') {
       setPath(joinPath(data.path, nextFolderName || folderNameFromWorkspaceName(name) || 'workspace'))
     } else {
-      setPath(data.path)
+      // In open mode, only auto-select if the browsed folder itself is a workspace
+      if (data.is_workspace) setPath(data.path)
     }
   }
 
@@ -159,75 +167,135 @@ export default function WorkspacePage() {
     return v != null ? String(v) : ''
   }
 
-  const renderFolderBrowser = () => (
-    <div className="workspace-picker">
-      <div className="workspace-picker-topbar">
-        <div className="workspace-picker-roots">
-          {browser?.roots.map(root => (
-            <button
-              key={root.path}
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => browseTo(root.path)}
-              disabled={browserLoading}
-            >
-              {root.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => browser?.parent && browseTo(browser.parent)}
-          disabled={!browser?.parent || browserLoading}
-        >
-          Up
-        </button>
-      </div>
+  const renderFolderBrowser = () => {
+    const visibleEntries = browser?.entries ?? []
 
-      <div className="workspace-picker-current">
-        <div>
-          <span>{mode === 'create' ? 'Parent folder' : 'Selected folder'}</span>
-          <strong title={browser?.path}>{browser?.path || 'Loading folders...'}</strong>
-        </div>
-        {browser?.is_workspace && <span className="badge badge-success">workspace</span>}
-      </div>
-
-      {browserError && <div className="alert alert-error">{browserError}</div>}
-      {browser?.error && <div className="alert alert-info">{browser.error}</div>}
-
-      <div className="workspace-picker-list">
-        {browserLoading && <div className="workspace-picker-empty">Loading folders...</div>}
-        {!browserLoading && browser?.parent && (
-          <button type="button" className="workspace-folder-row" onClick={() => browseTo(browser.parent || undefined)}>
-            <span className="workspace-folder-icon">..</span>
-            <span className="workspace-folder-main">
-              <span>Parent folder</span>
-              <small>{browser.parent}</small>
-            </span>
-          </button>
-        )}
-        {!browserLoading && browser?.entries.map(entry => (
+    return (
+      <div className="workspace-picker">
+        <div className="workspace-picker-topbar">
+          <div className="workspace-picker-roots">
+            {browser?.roots.map(root => (
+              <button
+                key={root.path}
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => browseTo(root.path)}
+                disabled={browserLoading}
+              >
+                {root.label}
+              </button>
+            ))}
+          </div>
           <button
-            key={entry.path}
             type="button"
-            className={`workspace-folder-row ${entry.is_workspace ? 'is-workspace' : ''}`}
-            onClick={() => browseTo(entry.path)}
+            className="btn btn-secondary btn-sm"
+            onClick={() => browser?.parent && browseTo(browser.parent)}
+            disabled={!browser?.parent || browserLoading}
           >
-            <span className="workspace-folder-icon">[]</span>
-            <span className="workspace-folder-main">
-              <span>{entry.name}</span>
-              <small>{entry.path}</small>
-            </span>
-            {entry.is_workspace && <span className="badge badge-success">workspace</span>}
+            Up
           </button>
-        ))}
-        {!browserLoading && browser && browser.entries.length === 0 && (
-          <div className="workspace-picker-empty">No folders here</div>
-        )}
+        </div>
+
+        <div className="workspace-picker-current">
+          <div>
+            <span>{mode === 'create' ? 'Parent folder' : 'Browsing'}</span>
+            <strong title={browser?.path}>{browser?.path || 'Loading folders...'}</strong>
+          </div>
+          {browser?.is_workspace && (
+            <button
+              type="button"
+              className={`badge badge-success${mode === 'open' && path === browser.path ? ' selected' : ''}`}
+              style={{ cursor: mode === 'open' ? 'pointer' : 'default', border: 0 }}
+              onClick={() => mode === 'open' && setPath(browser.path!)}
+              title={mode === 'open' ? 'Select this workspace' : undefined}
+            >
+              workspace{mode === 'open' ? ' — select' : ''}
+            </button>
+          )}
+        </div>
+
+        {browserError && <div className="alert alert-error">{browserError}</div>}
+        {browser?.error && <div className="alert alert-info">{browser.error}</div>}
+
+        <div className="workspace-picker-list">
+          {browserLoading && <div className="workspace-picker-empty">Loading...</div>}
+          {!browserLoading && browser?.parent && (
+            <button type="button" className="workspace-folder-row" onClick={() => browseTo(browser.parent || undefined)}>
+              <span className="workspace-folder-icon">..</span>
+              <span className="workspace-folder-main">
+                <span>Parent folder</span>
+                <small>{browser.parent}</small>
+              </span>
+            </button>
+          )}
+          {!browserLoading && mode === 'open' && (() => {
+            const workspaces = visibleEntries.filter(e => e.is_workspace)
+            const folders = visibleEntries.filter(e => !e.is_workspace)
+            return <>
+              {workspaces.length === 0 && folders.length === 0 && (
+                <div className="workspace-picker-empty">No folders here</div>
+              )}
+              {workspaces.length === 0 && folders.length > 0 && (
+                <div className="workspace-picker-section-label">No workspaces here — navigate into a folder</div>
+              )}
+              {workspaces.map(entry => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className={`workspace-folder-row is-workspace${path === entry.path ? ' selected' : ''}`}
+                  onClick={() => setPath(entry.path)}
+                >
+                  <span className="workspace-folder-icon">[]</span>
+                  <span className="workspace-folder-main">
+                    <span>{entry.name}</span>
+                    <small>{entry.path}</small>
+                  </span>
+                  <span className="badge badge-success">workspace</span>
+                </button>
+              ))}
+              {folders.length > 0 && workspaces.length > 0 && (
+                <div className="workspace-picker-section-label">Other folders</div>
+              )}
+              {folders.map(entry => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className="workspace-folder-row workspace-folder-nav"
+                  onClick={() => browseTo(entry.path)}
+                >
+                  <span className="workspace-folder-icon">[]</span>
+                  <span className="workspace-folder-main">
+                    <span>{entry.name}</span>
+                    <small>{entry.path}</small>
+                  </span>
+                </button>
+              ))}
+            </>
+          })()}
+          {!browserLoading && mode !== 'open' && <>
+            {visibleEntries.map(entry => (
+              <button
+                key={entry.path}
+                type="button"
+                className={`workspace-folder-row${entry.is_workspace ? ' is-workspace' : ''}`}
+                onClick={() => browseTo(entry.path)}
+              >
+                <span className="workspace-folder-icon">[]</span>
+                <span className="workspace-folder-main">
+                  <span>{entry.name}</span>
+                  <small>{entry.path}</small>
+                </span>
+                {entry.is_workspace && <span className="badge badge-success">workspace</span>}
+              </button>
+            ))}
+            {visibleEntries.length === 0 && (
+              <div className="workspace-picker-empty">No folders here</div>
+            )}
+          </>}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div>
@@ -357,16 +425,42 @@ export default function WorkspacePage() {
               {error && <div className="alert alert-error">{error}</div>}
               <form onSubmit={handleOpen}>
                 <div className="form-group">
-                  <label>Workspace folder</label>
-                  <div className="workspace-path-row">
-                    <input type="text" placeholder="C:\Users\me\my-workspace" value={path} onChange={e => setPath(e.target.value)} required autoFocus />
-                    <button type="button" className="btn btn-secondary" onClick={() => browseTo(path)} disabled={!path || browserLoading}>Go</button>
-                  </div>
+                  <label>Workspaces on this computer</label>
+                  {scanning && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Scanning...</div>}
+                  {!scanning && scanned.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No workspaces found</div>}
+                  {scanned.length > 0 && (
+                    <div className="workspace-scan-list">
+                      {scanned.map(ws => (
+                        <button
+                          key={ws.path}
+                          type="button"
+                          className={`workspace-scan-row${path === ws.path ? ' selected' : ''}`}
+                          onClick={() => setPath(ws.path)}
+                        >
+                          <div style={{ fontWeight: 600 }}>{ws.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{ws.path}</div>
+                          {ws.description && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{ws.description}</div>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {renderFolderBrowser()}
+                <details style={{ marginBottom: 12 }}>
+                  <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}>Browse manually</summary>
+                  <div style={{ marginTop: 10 }}>
+                    <div className="form-group">
+                      <label>Workspace folder path</label>
+                      <div className="workspace-path-row">
+                        <input type="text" placeholder="C:\Users\me\my-workspace" value={path} onChange={e => setPath(e.target.value)} autoFocus />
+                        <button type="button" className="btn btn-secondary" onClick={() => browseTo(path)} disabled={!path || browserLoading}>Go</button>
+                      </div>
+                    </div>
+                    {renderFolderBrowser()}
+                  </div>
+                </details>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-secondary" onClick={() => setMode(null)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? <span className="spinner" /> : 'Open'}</button>
+                  <button type="submit" className="btn btn-primary" disabled={loading || !path}>{loading ? <span className="spinner" /> : 'Open'}</button>
                 </div>
               </form>
             </div>

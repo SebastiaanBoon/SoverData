@@ -195,8 +195,11 @@ export interface WorkspaceFileContent {
 }
 
 // ── Workspace ────────────────────────────────────────────────────
+export interface ScannedWorkspace { path: string; name: string; description: string }
+
 export const wsApi = {
   get: () => api.get<Workspace | null>('/workspace').then(r => r.data),
+  scan: () => api.get<{ workspaces: ScannedWorkspace[] }>('/workspace/scan').then(r => r.data.workspaces),
   browse: (path?: string) =>
     api.get<WorkspaceBrowserList>('/workspace/browse', { params: path ? { path } : {} }).then(r => r.data),
   open: (path: string) => api.post<Workspace>('/workspace/open', { path }).then(r => r.data),

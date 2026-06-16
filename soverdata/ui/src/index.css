@@ -299,6 +299,48 @@ tbody tr:hover { background: var(--bg-3); }
 .workspace-folder-row.is-workspace {
   background: var(--bg-3);
 }
+.workspace-folder-row.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-2));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.workspace-folder-row.workspace-folder-nav {
+  opacity: 0.5;
+}
+.workspace-folder-row.workspace-folder-nav:hover {
+  opacity: 1;
+}
+.workspace-scan-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.workspace-scan-row {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  padding: 10px 14px;
+  text-align: left;
+  width: 100%;
+}
+.workspace-scan-row:last-child { border-bottom: 0; }
+.workspace-scan-row:hover { background: var(--bg-3); }
+.workspace-scan-row.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-2));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.workspace-picker-section-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 6px 10px 4px;
+  text-transform: uppercase;
+}
 .workspace-folder-icon {
   color: var(--accent);
   font-family: var(--font-mono);

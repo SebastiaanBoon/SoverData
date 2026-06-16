@@ -3,9 +3,7 @@ name: Deploy SoverData to Azure
 on:
   push:
     branches:
-      - SoverData-Claude-Sonnet-4.6
-      - SoverData-GPT-5.3-Codex
-      - SoverData-Gemini-3.5-Flash
+      - SoverData
 
 concurrency:
   group: deploy-${{ github.ref_name }}
@@ -24,9 +22,7 @@ jobs:
       - name: Set deployment vars
         run: |
           case "${{ github.ref_name }}" in
-            SoverData-Claude-Sonnet-4.6) APP=soverdata-claude-sonnet-46 ;;
-            SoverData-GPT-5.3-Codex)    APP=soverdata-gpt-53-codex ;;
-            SoverData-Gemini-3.5-Flash) APP=soverdata-gemini-35-flash ;;
+            SoverData) APP=soverdata ;;
           esac
           echo "APP_NAME=$APP" >> $GITHUB_ENV
           echo "IMAGE_BASE=${{ secrets.ACR_LOGIN_SERVER }}/$APP" >> $GITHUB_ENV
