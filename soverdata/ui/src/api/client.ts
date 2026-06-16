@@ -213,6 +213,8 @@ export const connApi = {
     api.put<Connection>(`/connections/${name}`, data).then(r => r.data),
   delete: (name: string) => api.delete(`/connections/${name}`).then(r => r.data),
   test: (name: string) => api.post<{ status: string; message: string }>(`/connections/${name}/test`).then(r => r.data),
+  query: (name: string, sql: string, limit = 200) =>
+    api.post<QueryResult>(`/connections/${name}/query`, { sql, limit }).then(r => r.data),
 }
 
 // ── Pipelines ────────────────────────────────────────────────────

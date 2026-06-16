@@ -290,7 +290,7 @@ function OrchestrationsEditor() {
         id: e.id, source: e.source, target: e.target,
         condition: (e.data?.condition as Condition) ?? 'success',
       }))
-      const payload = { name, description: description.trim(), nodes: backendNodes, edges: backendEdges, triggers }
+      const payload = { name, description: description.trim(), nodes: backendNodes, edges: backendEdges, steps: [], triggers }
       const saved = isNew
         ? await orchestrationApi.create(payload)
         : await orchestrationApi.update(selectedName, payload)

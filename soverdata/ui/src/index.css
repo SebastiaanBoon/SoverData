@@ -1011,6 +1011,36 @@ tbody tr:hover { background: var(--bg-3); }
   text-align: center;
 }
 
+/* ── Activity modal ──────────────────────────────────────────────── */
+.modal-xl {
+  max-width: 900px;
+  width: 94vw;
+}
+.act-test-result {
+  border: 1px solid var(--success);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(62, 207, 142, 0.04);
+}
+.act-test-result-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.act-test-rows { font-size: 12px; color: var(--text-muted); }
+.act-test-table-wrap {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.act-test-table-wrap table { font-size: 12px; }
+.act-test-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-null { color: var(--text-muted); font-style: italic; }
+.act-num { color: #7dd3fc; font-family: var(--font-mono); }
+
 /* ── Packages page ───────────────────────────────────────────────── */
 .pkg-status-bar {
   display: flex;

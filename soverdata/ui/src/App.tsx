@@ -9,8 +9,6 @@ import PackagesPage from './pages/PackagesPage'
 import OrchestrationsPage from './pages/OrchestrationsPage'
 import RunsPage from './pages/RunsPage'
 import CatalogPage from './pages/CatalogPage'
-import QueryPage from './pages/QueryPage'
-import BranchesPage from './pages/BranchesPage'
 
 export default function App() {
   return (
@@ -28,8 +26,6 @@ export default function App() {
               <Route path="/orchestrations" element={<OrchestrationsPage />} />
               <Route path="/runs" element={<RunsPage />} />
               <Route path="/catalog" element={<CatalogPage />} />
-              <Route path="/query" element={<QueryPage />} />
-              <Route path="/branches" element={<BranchesPage />} />
             </Routes>
           </main>
         </div>

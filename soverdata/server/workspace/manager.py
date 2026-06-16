@@ -189,7 +189,7 @@ def list_orchestrations(root: Path) -> list[dict]:
         data.setdefault("name", f.stem)
         data["path"] = str(f.relative_to(root))
         data["modified"] = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat()
-        data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
+        data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get("triggers", {}).get(data["name"], {}))
         data = _upgrade_orchestration(data)
         result.append(data)
     return result
@@ -203,7 +203,7 @@ def get_orchestration(root: Path, name: str) -> dict:
     data.setdefault("name", name)
     data["path"] = str(f.relative_to(root))
     trigger_state = _read_orchestration_trigger_state(root)
-    data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
+    data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get("triggers", {}).get(data["name"], {}))
     return _upgrade_orchestration(data)
 
 
