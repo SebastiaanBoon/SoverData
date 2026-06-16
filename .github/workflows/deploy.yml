@@ -61,7 +61,7 @@ jobs:
             --settings \
               WEBSITES_PORT=8000 \
               PORT=8000 \
-              SOVERDATA_WORKSPACE=/home/workspace \
+              SOVERDATA_WORKSPACES_ROOT=/home/workspaces \
               WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
               WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
             --output none

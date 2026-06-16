@@ -1,9 +1,7 @@
-"""Workspace API — open and create workspaces."""
+"""Workspace API."""
 from __future__ import annotations
 
-import os
-import string
-from datetime import datetime, timezone
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -15,14 +13,48 @@ from server.workspace import manager as wm
 router = APIRouter()
 
 
+class CreateWorkspaceRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
 class OpenWorkspaceRequest(BaseModel):
     path: str
 
 
-class CreateWorkspaceRequest(BaseModel):
-    path: str
-    name: str
-    description: str = ""
+@router.get("/root")
+def get_workspaces_root():
+    """Return the managed workspaces root folder."""
+    root = app_state.workspaces_root
+    root.mkdir(parents=True, exist_ok=True)
+    return {"path": str(root)}
+
+
+@router.get("/list")
+def list_workspaces():
+    """List all workspaces inside the managed workspaces root."""
+    root = app_state.workspaces_root
+    root.mkdir(parents=True, exist_ok=True)
+    workspaces = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        yaml_file = child / "workspace.yaml"
+        if not yaml_file.exists():
+            continue
+        try:
+            import yaml
+            with open(yaml_file, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            workspaces.append({
+                "path": str(child),
+                "name": cfg.get("name") or child.name,
+                "description": cfg.get("description", ""),
+                "created_at": cfg.get("created_at"),
+            })
+        except Exception:
+            workspaces.append({"path": str(child), "name": child.name, "description": "", "created_at": None})
+    return {"workspaces": workspaces, "root": str(root)}
 
 
 @router.get("")
@@ -33,100 +65,6 @@ def get_workspace():
         return wm.workspace_info(app_state.get_workspace())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/scan")
-def scan_workspaces():
-    """Scan common locations for workspace.yaml files and return found workspaces."""
-    import os
-    import yaml as _yaml
-
-    found = []
-    seen: set[str] = set()
-
-    _SKIP = {
-        "node_modules", ".git", "__pycache__", ".venv", "venv",
-        "AppData", "site-packages", "$Recycle.Bin", "Windows",
-    }
-
-    def _walk(root: str):
-        try:
-            entries = os.scandir(root)
-        except OSError:
-            return
-        dirs = []
-        with entries:
-            for e in entries:
-                try:
-                    if e.is_file(follow_symlinks=False) and e.name == "workspace.yaml":
-                        ws_dir = root
-                        if ws_dir not in seen:
-                            seen.add(ws_dir)
-                            try:
-                                with open(e.path, encoding="utf-8") as f:
-                                    cfg = _yaml.safe_load(f) or {}
-                                found.append({
-                                    "path": ws_dir,
-                                    "name": cfg.get("name") or Path(ws_dir).name,
-                                    "description": cfg.get("description", ""),
-                                })
-                            except Exception:
-                                found.append({"path": ws_dir, "name": Path(ws_dir).name, "description": ""})
-                    elif e.is_dir(follow_symlinks=False) and e.name not in _SKIP:
-                        dirs.append(e.path)
-                except OSError:
-                    continue
-        for d in dirs:
-            _walk(d)
-
-    _walk(str(Path.home()))
-    return {"workspaces": found}
-
-
-@router.get("/browse")
-def browse_folders(path: str | None = None):
-    """Browse local folders so users can choose a workspace path."""
-    try:
-        target = _resolve_browser_path(path)
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    if not target.exists():
-        raise HTTPException(status_code=404, detail=f"Path does not exist: {target}")
-    if not target.is_dir():
-        raise HTTPException(status_code=400, detail=f"Path is not a folder: {target}")
-
-    entries = []
-    error = None
-    try:
-        children = sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        for child in children:
-            try:
-                if not child.is_dir():
-                    continue
-                stat = child.stat()
-                entries.append(
-                    {
-                        "name": child.name or str(child),
-                        "path": str(child),
-                        "type": "folder",
-                        "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                        "is_workspace": (child / "workspace.yaml").is_file(),
-                    }
-                )
-            except OSError:
-                continue
-    except OSError as exc:
-        error = str(exc)
-
-    parent = None if target.parent == target else str(target.parent)
-    return {
-        "path": str(target),
-        "parent": parent,
-        "roots": _browser_roots(),
-        "entries": entries,
-        "is_workspace": (target / "workspace.yaml").is_file(),
-        "error": error,
-    }
 
 
 @router.post("/open")
@@ -143,9 +81,17 @@ def open_workspace(req: OpenWorkspaceRequest):
 
 @router.post("/create")
 def create_workspace(req: CreateWorkspaceRequest):
+    root = app_state.workspaces_root
+    root.mkdir(parents=True, exist_ok=True)
+    folder_name = _slugify(req.name) or "workspace"
+    path = root / folder_name
+    suffix = 2
+    while path.exists():
+        path = root / f"{folder_name}-{suffix}"
+        suffix += 1
     try:
-        info = wm.create_workspace(req.path, req.name, req.description)
-        app_state.set_workspace(req.path)
+        info = wm.create_workspace(str(path), req.name, req.description)
+        app_state.set_workspace(str(path))
         return info
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -157,34 +103,9 @@ def close_workspace():
     return {"status": "closed"}
 
 
-def _resolve_browser_path(path: str | None) -> Path:
-    if path:
-        return Path(path).expanduser().resolve()
-    home = Path.home()
-    if home.exists():
-        return home.resolve()
-    return Path.cwd().resolve()
-
-
-def _browser_roots() -> list[dict]:
-    roots: list[dict] = []
-    home = Path.home()
-    if home.exists():
-        roots.append({"label": "Home", "path": str(home.resolve())})
-
-    if os.name == "nt":
-        for letter in string.ascii_uppercase:
-            drive = Path(f"{letter}:\\")
-            if drive.exists():
-                roots.append({"label": f"{letter}:", "path": str(drive)})
-    else:
-        roots.append({"label": "/", "path": "/"})
-
-    seen: set[str] = set()
-    unique = []
-    for root in roots:
-        if root["path"] in seen:
-            continue
-        seen.add(root["path"])
-        unique.append(root)
-    return unique
+def _slugify(value: str) -> str:
+    value = value.strip().lower()
+    value = re.sub(r"[^\w\s-]", "", value)
+    value = re.sub(r"[\s_]+", "-", value)
+    value = re.sub(r"-+", "-", value).strip("-")
+    return value[:64]

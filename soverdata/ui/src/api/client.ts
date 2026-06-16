@@ -14,27 +14,6 @@ export interface Workspace {
   created_at: string
 }
 
-export interface WorkspaceBrowserRoot {
-  label: string
-  path: string
-}
-
-export interface WorkspaceBrowserEntry {
-  name: string
-  path: string
-  type: 'folder'
-  modified: string
-  is_workspace: boolean
-}
-
-export interface WorkspaceBrowserList {
-  path: string
-  parent?: string | null
-  roots: WorkspaceBrowserRoot[]
-  entries: WorkspaceBrowserEntry[]
-  is_workspace: boolean
-  error?: string | null
-}
 
 export interface Connection {
   name: string
@@ -195,16 +174,14 @@ export interface WorkspaceFileContent {
 }
 
 // ── Workspace ────────────────────────────────────────────────────
-export interface ScannedWorkspace { path: string; name: string; description: string }
+export interface WorkspaceListItem { path: string; name: string; description: string; created_at: string | null }
 
 export const wsApi = {
   get: () => api.get<Workspace | null>('/workspace').then(r => r.data),
-  scan: () => api.get<{ workspaces: ScannedWorkspace[] }>('/workspace/scan').then(r => r.data.workspaces),
-  browse: (path?: string) =>
-    api.get<WorkspaceBrowserList>('/workspace/browse', { params: path ? { path } : {} }).then(r => r.data),
+  list: () => api.get<{ workspaces: WorkspaceListItem[]; root: string }>('/workspace/list').then(r => r.data),
   open: (path: string) => api.post<Workspace>('/workspace/open', { path }).then(r => r.data),
-  create: (path: string, name: string, description = '') =>
-    api.post<Workspace>('/workspace/create', { path, name, description }).then(r => r.data),
+  create: (name: string, description = '') =>
+    api.post<Workspace>('/workspace/create', { name, description }).then(r => r.data),
   close: () => api.post('/workspace/close').then(r => r.data),
 }
 
