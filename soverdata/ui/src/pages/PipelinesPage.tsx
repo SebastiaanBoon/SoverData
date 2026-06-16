@@ -11,6 +11,7 @@ Environment variables available:
 """
 import os
 import pandas as pd
+from server.engine.lakehouse import write_table
 
 workspace = os.environ.get('SOVERDATA_WORKSPACE', '.')
 lakehouse = os.environ.get('SOVERDATA_LAKEHOUSE', 'lakehouse')
@@ -22,10 +23,8 @@ df = pd.DataFrame({
     'value': [100, 200, 300],
 })
 
-out_path = os.path.join(lakehouse, 'bronze', 'example')
-os.makedirs(out_path, exist_ok=True)
-df.to_parquet(os.path.join(out_path, 'data.parquet'), index=False)
-print(f"Written {len(df)} rows to {out_path}")
+out_file = write_table(df, lakehouse, 'bronze', 'example')
+print(f"Written {len(df)} rows to {out_file}")
 `
 
 const DEFAULT_SQL = `-- SQL transform pipeline

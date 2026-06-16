@@ -15,6 +15,7 @@ ui/dist/
 # Data
 *.parquet
 *.duckdb
+.soverdata/
 
 # OS
 .DS_Store

@@ -3,8 +3,11 @@ import { useWorkspace } from '../context/WorkspaceContext'
 
 const navItems = [
   { to: '/', label: 'Workspace', icon: '⬡' },
+  { to: '/files', label: 'Files', icon: '[]' },
   { to: '/connections', label: 'Connections', icon: '⚡' },
   { to: '/pipelines', label: 'Pipelines', icon: '▶' },
+  { to: '/packages', label: 'Packages', icon: '+' },
+  { to: '/orchestrations', label: 'Orchestrations', icon: '>>' },
   { to: '/runs', label: 'Runs', icon: '◎' },
   { to: '/catalog', label: 'Catalog', icon: '◫' },
   { to: '/query', label: 'SQL Query', icon: '≡' },

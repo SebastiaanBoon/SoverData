@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import os
 import shutil
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import yaml
 
@@ -15,11 +17,13 @@ WORKSPACE_DIRS = [
     "connections",
     "pipelines/python",
     "pipelines/sql",
+    "orchestrations",
     "lakehouse/bronze",
     "lakehouse/silver",
     "lakehouse/gold",
     "catalog",
     "runs",
+    "orchestration-runs",
 ]
 
 
@@ -40,11 +44,18 @@ def create_workspace(path: str, name: str, description: str = "") -> dict:
         "description": description,
         "format_version": WORKSPACE_FORMAT_VERSION,
         "created_at": _now(),
+        "lakehouse_retention": {
+            "enabled": False,
+            "bronze_days": 90,
+            "cleanup_interval_hours": 24,
+            "last_cleanup_at": None,
+        },
     }
     _write_yaml(root / "workspace.yaml", meta)
 
     # Seed catalog/tables.yaml
     _write_yaml(root / "catalog" / "tables.yaml", {"tables": []})
+    _ensure_gitignore_entry(root / ".gitignore", ".soverdata/")
 
     return {**meta, "path": str(root)}
 
@@ -163,6 +174,105 @@ def delete_pipeline(root: Path, name: str, pipeline_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Orchestrations
+# ---------------------------------------------------------------------------
+
+def list_orchestrations(root: Path) -> list[dict]:
+    folder = root / "orchestrations"
+    folder.mkdir(exist_ok=True)
+    trigger_state = _read_orchestration_trigger_state(root)
+    result = []
+    for f in sorted(folder.glob("*.yaml")):
+        if f.name.startswith("."):
+            continue
+        data = _read_yaml(f)
+        data.setdefault("name", f.stem)
+        data["path"] = str(f.relative_to(root))
+        data["modified"] = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat()
+        data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
+        result.append(data)
+    return result
+
+
+def get_orchestration(root: Path, name: str) -> dict:
+    f = root / "orchestrations" / f"{name}.yaml"
+    if not f.exists():
+        raise FileNotFoundError(f"Orchestration not found: {name}")
+    data = _read_yaml(f)
+    data.setdefault("name", name)
+    data["path"] = str(f.relative_to(root))
+    trigger_state = _read_orchestration_trigger_state(root)
+    data["triggers"] = _merge_trigger_state(data.get("triggers", []), trigger_state.get(data["name"], {}))
+    return data
+
+
+def save_orchestration(root: Path, name: str, data: dict) -> dict:
+    folder = root / "orchestrations"
+    folder.mkdir(exist_ok=True)
+    triggers = _normalize_triggers(data.get("triggers", []))
+    data = {
+        "name": name,
+        "description": data.get("description", ""),
+        "steps": data.get("steps", []),
+        "triggers": triggers,
+        "updated_at": _now(),
+    }
+    data.setdefault("created_at", _now())
+    existing = folder / f"{name}.yaml"
+    if existing.exists():
+        current = _read_yaml(existing)
+        data["created_at"] = current.get("created_at", data["updated_at"])
+    _write_yaml(existing, data)
+    return {**data, "path": str(existing.relative_to(root))}
+
+
+def delete_orchestration(root: Path, name: str) -> None:
+    f = root / "orchestrations" / f"{name}.yaml"
+    if not f.exists():
+        raise FileNotFoundError(f"Orchestration not found: {name}")
+    f.unlink()
+
+
+def list_orchestration_runs(root: Path, orchestration: str | None = None) -> list[dict]:
+    runs_dir = root / "orchestration-runs"
+    if not runs_dir.exists():
+        return []
+    result = []
+    for run_dir in sorted(runs_dir.iterdir(), reverse=True):
+        if run_dir.is_dir():
+            run_yaml = run_dir / "run.yaml"
+            if run_yaml.exists():
+                data = _read_yaml(run_yaml)
+                if orchestration is None or data.get("orchestration") == orchestration:
+                    result.append(data)
+    return result
+
+
+def get_orchestration_run(root: Path, run_id: str) -> dict:
+    run_dir = root / "orchestration-runs" / run_id
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Orchestration run not found: {run_id}")
+    return _read_yaml(run_dir / "run.yaml")
+
+
+def save_orchestration_run(root: Path, run_meta: dict) -> None:
+    run_id = run_meta["id"]
+    run_dir = root / "orchestration-runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _write_yaml(run_dir / "run.yaml", run_meta)
+
+
+def record_orchestration_trigger_fire(root: Path, orchestration_name: str, trigger_id: str, fired_at: str | None = None) -> None:
+    state = _read_orchestration_trigger_state(root)
+    state.setdefault("triggers", {})
+    orchestration_state = state["triggers"].setdefault(orchestration_name, {})
+    orchestration_state[trigger_id] = {
+        "last_fired_at": fired_at or _now(),
+    }
+    _write_orchestration_trigger_state(root, state)
+
+
+# ---------------------------------------------------------------------------
 # Catalog
 # ---------------------------------------------------------------------------
 
@@ -244,5 +354,56 @@ def _write_yaml(path: Path, data: dict) -> None:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
 
+def _ensure_gitignore_entry(path: Path, entry: str) -> None:
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        entries = {line.strip() for line in text.splitlines()}
+        if entry in entries or entry.rstrip("/") in entries:
+            return
+        suffix = "" if text.endswith("\n") or not text else "\n"
+        path.write_text(f"{text}{suffix}{entry}\n", encoding="utf-8")
+    else:
+        path.write_text(f"{entry}\n", encoding="utf-8")
+
+
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _trigger_state_path(root: Path) -> Path:
+    return root / "orchestrations" / ".trigger-state.yaml"
+
+
+def _read_orchestration_trigger_state(root: Path) -> dict:
+    path = _trigger_state_path(root)
+    if not path.exists():
+        return {"triggers": {}}
+    data = _read_yaml(path)
+    data.setdefault("triggers", {})
+    return data
+
+
+def _write_orchestration_trigger_state(root: Path, data: dict) -> None:
+    _write_yaml(_trigger_state_path(root), data)
+
+
+def _normalize_triggers(triggers: list[dict]) -> list[dict]:
+    normalized = []
+    for trigger in triggers or []:
+        item = deepcopy(trigger)
+        item.setdefault("id", str(uuid4()))
+        item.setdefault("enabled", True)
+        item.setdefault("type", "interval")
+        normalized.append(item)
+    return normalized
+
+
+def _merge_trigger_state(triggers: list[dict], state: dict) -> list[dict]:
+    merged = []
+    for trigger in triggers or []:
+        item = deepcopy(trigger)
+        trigger_id = item.get("id")
+        if trigger_id and trigger_id in state:
+            item.update(state[trigger_id])
+        merged.append(item)
+    return merged

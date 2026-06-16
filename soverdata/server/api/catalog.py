@@ -42,23 +42,3 @@ def preview_table(layer: str, name: str, limit: int = 100):
     if not table_path.exists():
         raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{name}")
     return engine.preview_table(table_path, limit=limit)
-
-
-
-@router.get("/tables/{layer}/{name}/schema")
-def get_table_schema(layer: str, name: str):
-    ws = app_state.require_workspace()
-    table_path = ws / "lakehouse" / layer / name
-    if not table_path.exists():
-        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{name}")
-    schema = engine.get_table_schema(table_path)
-    return {"layer": layer, "name": name, "schema": schema}
-
-
-@router.get("/tables/{layer}/{name}/preview")
-def preview_table(layer: str, name: str, limit: int = 100):
-    ws = app_state.require_workspace()
-    table_path = ws / "lakehouse" / layer / name
-    if not table_path.exists():
-        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{name}")
-    return engine.preview_table(table_path, limit=limit)

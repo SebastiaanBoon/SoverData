@@ -6,6 +6,7 @@ Run via the UI or: soverdata run ingest_sales --pipeline-type python --workspace
 import os
 import pandas as pd
 from pathlib import Path
+from server.engine.lakehouse import write_table
 
 workspace = Path(os.environ.get("SOVERDATA_WORKSPACE", "."))
 lakehouse = Path(os.environ.get("SOVERDATA_LAKEHOUSE", workspace / "lakehouse"))
@@ -19,8 +20,5 @@ df = pd.read_csv(csv_path, parse_dates=["order_date"])
 print(f"Read {len(df)} rows from {csv_path}")
 
 # ── Write to Bronze ───────────────────────────────────────────────
-out_dir = lakehouse / "bronze" / "sales"
-out_dir.mkdir(parents=True, exist_ok=True)
-out_file = out_dir / "data.parquet"
-df.to_parquet(out_file, index=False)
+out_file = write_table(df, lakehouse, "bronze", "sales")
 print(f"Written {len(df)} rows to {out_file}")

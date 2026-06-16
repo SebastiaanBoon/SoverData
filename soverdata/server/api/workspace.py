@@ -1,4 +1,11 @@
 """Workspace API — open and create workspaces."""
+from __future__ import annotations
+
+import os
+import string
+from datetime import datetime, timezone
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -28,6 +35,52 @@ def get_workspace():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/browse")
+def browse_folders(path: str | None = None):
+    """Browse local folders so users can choose a workspace path."""
+    try:
+        target = _resolve_browser_path(path)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Path does not exist: {target}")
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a folder: {target}")
+
+    entries = []
+    error = None
+    try:
+        children = sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        for child in children:
+            try:
+                if not child.is_dir():
+                    continue
+                stat = child.stat()
+                entries.append(
+                    {
+                        "name": child.name or str(child),
+                        "path": str(child),
+                        "type": "folder",
+                        "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                        "is_workspace": (child / "workspace.yaml").is_file(),
+                    }
+                )
+            except OSError:
+                continue
+    except OSError as exc:
+        error = str(exc)
+
+    parent = None if target.parent == target else str(target.parent)
+    return {
+        "path": str(target),
+        "parent": parent,
+        "roots": _browser_roots(),
+        "entries": entries,
+        "is_workspace": (target / "workspace.yaml").is_file(),
+        "error": error,
+    }
+
+
 @router.post("/open")
 def open_workspace(req: OpenWorkspaceRequest):
     try:
@@ -54,3 +107,36 @@ def create_workspace(req: CreateWorkspaceRequest):
 def close_workspace():
     app_state.workspace_path = None
     return {"status": "closed"}
+
+
+def _resolve_browser_path(path: str | None) -> Path:
+    if path:
+        return Path(path).expanduser().resolve()
+    home = Path.home()
+    if home.exists():
+        return home.resolve()
+    return Path.cwd().resolve()
+
+
+def _browser_roots() -> list[dict]:
+    roots: list[dict] = []
+    home = Path.home()
+    if home.exists():
+        roots.append({"label": "Home", "path": str(home.resolve())})
+
+    if os.name == "nt":
+        for letter in string.ascii_uppercase:
+            drive = Path(f"{letter}:\\")
+            if drive.exists():
+                roots.append({"label": f"{letter}:", "path": str(drive)})
+    else:
+        roots.append({"label": "/", "path": "/"})
+
+    seen: set[str] = set()
+    unique = []
+    for root in roots:
+        if root["path"] in seen:
+            continue
+        seen.add(root["path"])
+        unique.append(root)
+    return unique
