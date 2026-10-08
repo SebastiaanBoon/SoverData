@@ -42,6 +42,8 @@ def create_connection(req: ConnectionRequest):
             "config": req.config,
         }
         return _public_connection(wm.save_connection(ws, req.name, data))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -70,6 +72,8 @@ def update_connection(name: str, req: ConnectionRequest):
         return _public_connection(wm.save_connection(ws, req.name, existing))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Connection not found: {name}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -137,7 +141,7 @@ def _test_connection_config(ws, conn: dict):
                 c.execute(sqlalchemy.text("SELECT 1"))
             return {"status": "ok", "message": "Database connection successful"}
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": _redact(str(e), config)}
 
     return {"status": "unknown", "message": f"Test not implemented for type: {conn_type}"}
 
@@ -209,7 +213,7 @@ def query_connection(name: str, req: ConnectionQueryRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=_redact(str(e), config))
 
 
 def _public_connection(conn: dict) -> dict:
@@ -244,6 +248,34 @@ def _merge_masked_config(existing, incoming):
         else:
             merged[key] = value
     return merged
+
+
+def _redact(message: str, config) -> str:
+    """Mask secret config values (and the password inside a URL) in a message."""
+    from urllib.parse import unquote, urlsplit
+
+    secrets: set[str] = set()
+
+    def collect(value, secret=False):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                collect(v, secret or _is_secret_key(str(k)))
+        elif isinstance(value, list):
+            for v in value:
+                collect(v, secret)
+        elif secret and isinstance(value, str) and value:
+            secrets.add(value)
+            try:
+                password = urlsplit(value).password
+            except ValueError:
+                password = None
+            if password:
+                secrets.update({password, unquote(password)})
+
+    collect(config)
+    for secret in sorted(secrets, key=len, reverse=True):
+        message = message.replace(secret, SECRET_MASK)
+    return message
 
 
 def _is_secret_key(key: str) -> bool:

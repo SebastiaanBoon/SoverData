@@ -77,13 +77,18 @@ if _default_workspace:
     if _workspace_path.exists():
         app_state.set_workspace(str(_workspace_path))
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The UI is served from the same origin (dev uses the Vite proxy), so CORS is
+# off unless origins are configured. Wildcard plus credentials let any website
+# call this API from a visitor's browser.
+_cors_origins = [o.strip() for o in os.environ.get("SOVERDATA_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials="*" not in _cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # API routers
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])

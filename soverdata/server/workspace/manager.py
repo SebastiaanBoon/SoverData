@@ -90,7 +90,15 @@ def list_connections(root: Path) -> list[dict]:
     return result
 
 
+def _safe_name(name: str, kind: str = "name") -> str:
+    """Names become file names: reject path separators and '..'."""
+    if not name or name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
+        raise ValueError(f"Invalid {kind}: {name!r}")
+    return name
+
+
 def save_connection(root: Path, name: str, data: dict) -> dict:
+    _safe_name(name, "connection name")
     folder = root / "connections"
     folder.mkdir(exist_ok=True)
     data["name"] = name
@@ -101,14 +109,14 @@ def save_connection(root: Path, name: str, data: dict) -> dict:
 
 
 def delete_connection(root: Path, name: str) -> None:
-    f = root / "connections" / f"{name}.yaml"
+    f = root / "connections" / f"{_safe_name(name, 'connection name')}.yaml"
     if not f.exists():
         raise FileNotFoundError(f"Connection not found: {name}")
     f.unlink()
 
 
 def get_connection(root: Path, name: str) -> dict:
-    f = root / "connections" / f"{name}.yaml"
+    f = root / "connections" / f"{_safe_name(name, 'connection name')}.yaml"
     if not f.exists():
         raise FileNotFoundError(f"Connection not found: {name}")
     return _read_yaml(f)
@@ -142,7 +150,7 @@ def list_pipelines(root: Path) -> list[dict]:
 def get_pipeline(root: Path, name: str, pipeline_type: str) -> dict:
     ext = ".py" if pipeline_type == "python" else ".sql"
     folder = "python" if pipeline_type == "python" else "sql"
-    f = root / "pipelines" / folder / f"{name}{ext}"
+    f = root / "pipelines" / folder / f"{_safe_name(name, 'pipeline name')}{ext}"
     if not f.exists():
         raise FileNotFoundError(f"Pipeline not found: {name}")
     code = f.read_text(encoding="utf-8")
@@ -159,7 +167,7 @@ def save_pipeline(root: Path, name: str, code: str, pipeline_type: str) -> dict:
     folder = "python" if pipeline_type == "python" else "sql"
     target_dir = root / "pipelines" / folder
     target_dir.mkdir(parents=True, exist_ok=True)
-    f = target_dir / f"{name}{ext}"
+    f = target_dir / f"{_safe_name(name, 'pipeline name')}{ext}"
     f.write_text(code, encoding="utf-8")
     return {"name": name, "type": pipeline_type, "path": str(f.relative_to(root))}
 
@@ -167,7 +175,7 @@ def save_pipeline(root: Path, name: str, code: str, pipeline_type: str) -> dict:
 def delete_pipeline(root: Path, name: str, pipeline_type: str) -> None:
     ext = ".py" if pipeline_type == "python" else ".sql"
     folder = "python" if pipeline_type == "python" else "sql"
-    f = root / "pipelines" / folder / f"{name}{ext}"
+    f = root / "pipelines" / folder / f"{_safe_name(name, 'pipeline name')}{ext}"
     if not f.exists():
         raise FileNotFoundError(f"Pipeline not found: {name}")
     f.unlink()
@@ -196,7 +204,7 @@ def list_orchestrations(root: Path) -> list[dict]:
 
 
 def get_orchestration(root: Path, name: str) -> dict:
-    f = root / "orchestrations" / f"{name}.yaml"
+    f = root / "orchestrations" / f"{_safe_name(name, 'orchestration name')}.yaml"
     if not f.exists():
         raise FileNotFoundError(f"Orchestration not found: {name}")
     data = _read_yaml(f)
@@ -224,7 +232,7 @@ def save_orchestration(root: Path, name: str, data: dict) -> dict:
         "updated_at": _now(),
     }
     saved.setdefault("created_at", _now())
-    existing = folder / f"{name}.yaml"
+    existing = folder / f"{_safe_name(name, 'orchestration name')}.yaml"
     if existing.exists():
         current = _read_yaml(existing)
         saved["created_at"] = current.get("created_at", saved["updated_at"])
@@ -233,7 +241,7 @@ def save_orchestration(root: Path, name: str, data: dict) -> dict:
 
 
 def delete_orchestration(root: Path, name: str) -> None:
-    f = root / "orchestrations" / f"{name}.yaml"
+    f = root / "orchestrations" / f"{_safe_name(name, 'orchestration name')}.yaml"
     if not f.exists():
         raise FileNotFoundError(f"Orchestration not found: {name}")
     f.unlink()
@@ -255,7 +263,7 @@ def list_orchestration_runs(root: Path, orchestration: str | None = None) -> lis
 
 
 def get_orchestration_run(root: Path, run_id: str) -> dict:
-    run_dir = root / "orchestration-runs" / run_id
+    run_dir = root / "orchestration-runs" / _safe_name(run_id, "run id")
     if not run_dir.exists():
         raise FileNotFoundError(f"Orchestration run not found: {run_id}")
     return _read_yaml(run_dir / "run.yaml")
@@ -263,7 +271,7 @@ def get_orchestration_run(root: Path, run_id: str) -> dict:
 
 def save_orchestration_run(root: Path, run_meta: dict) -> None:
     run_id = run_meta["id"]
-    run_dir = root / "orchestration-runs" / run_id
+    run_dir = root / "orchestration-runs" / _safe_name(run_id, "run id")
     run_dir.mkdir(parents=True, exist_ok=True)
     _write_yaml(run_dir / "run.yaml", run_meta)
 
@@ -325,7 +333,7 @@ def list_runs(root: Path, pipeline: str | None = None) -> list[dict]:
 
 
 def get_run(root: Path, run_id: str) -> dict:
-    run_dir = root / "runs" / run_id
+    run_dir = root / "runs" / _safe_name(run_id, "run id")
     if not run_dir.exists():
         raise FileNotFoundError(f"Run not found: {run_id}")
     data = _read_yaml(run_dir / "run.yaml")
@@ -338,7 +346,7 @@ def get_run(root: Path, run_id: str) -> dict:
 
 def save_run(root: Path, run_meta: dict, stdout: str = "", stderr: str = "") -> None:
     run_id = run_meta["id"]
-    run_dir = root / "runs" / run_id
+    run_dir = root / "runs" / _safe_name(run_id, "run id")
     run_dir.mkdir(parents=True, exist_ok=True)
     _write_yaml(run_dir / "run.yaml", run_meta)
     (run_dir / "stdout.log").write_text(stdout, encoding="utf-8")

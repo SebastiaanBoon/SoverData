@@ -37,6 +37,8 @@ def create_pipeline(req: PipelineRequest):
         raise HTTPException(status_code=400, detail="type must be 'python' or 'sql'")
     try:
         return wm.save_pipeline(ws, req.name, req.code, req.type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -46,6 +48,8 @@ def update_pipeline(name: str, pipeline_type: str, req: PipelineRequest):
     ws = app_state.require_workspace()
     try:
         return wm.save_pipeline(ws, req.name, req.code, pipeline_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

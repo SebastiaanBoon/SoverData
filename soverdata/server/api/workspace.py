@@ -69,6 +69,10 @@ def get_workspace():
 
 @router.post("/open")
 def open_workspace(req: OpenWorkspaceRequest):
+    root = app_state.workspaces_root.resolve()
+    target = Path(req.path).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(status_code=400, detail="Workspace must be inside the workspaces root.")
     try:
         info = wm.open_workspace(req.path)
         app_state.set_workspace(req.path)

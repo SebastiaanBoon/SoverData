@@ -85,6 +85,8 @@ def create_orchestration(req: OrchestrationRequest):
     ws = app_state.require_workspace()
     try:
         return wm.save_orchestration(ws, req.name, req.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -94,6 +96,8 @@ def update_orchestration(name: str, req: OrchestrationRequest):
     ws = app_state.require_workspace()
     try:
         return wm.save_orchestration(ws, name, req.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
