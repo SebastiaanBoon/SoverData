@@ -1,0 +1,102 @@
+name: Audit build (no deploy)
+
+# Build-only route for audit branches: lint, offline tests, image build,
+# smoke test without network, image push. Production deploys stay in
+# deploy.yml on the SoverData branch.
+on:
+  push:
+    branches:
+      - 'audit/**'
+  workflow_dispatch:
+
+concurrency:
+  group: audit-build-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: soverdata/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r soverdata/requirements.txt pytest ruff
+
+      - name: Lint (syntax errors and undefined names)
+        working-directory: soverdata
+        run: ruff check --select E9,F63,F7,F82 server cli tests
+
+      # Offline: temporary workspaces and a fake SQLAlchemy, no SQL, pipeline
+      # or package install against real systems.
+      - name: Tests
+        working-directory: soverdata
+        run: PYTHONPATH=. pytest tests -q -p no:cacheprovider
+
+      - name: Build image
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          docker build \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            -t "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}" .
+
+      # No network: only startup, the SPA, an empty workspace state and the
+      # security fixes. Requests that would execute anything are not sent.
+      - name: Smoke test container
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          docker run -d --name smoke --network none "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}"
+          docker exec -i smoke python - <<'PY'
+          import json, time, urllib.request, urllib.error
+
+          BASE = "http://127.0.0.1:8000"
+
+          def call(method, path, body=None, headers=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(BASE + path, data=data, method=method,
+                                           headers={"Content-Type": "application/json", **(headers or {})})
+              try:
+                  with urllib.request.urlopen(req, timeout=5) as r:
+                      return r.status, dict(r.headers), r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read()
+
+          for _ in range(60):
+              try:
+                  status, _, body = call("GET", "/")
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit("container did not start")
+
+          assert status == 200 and b"SoverData" in body, body[:200]
+          status, headers, body = call("GET", "/api/workspace", headers={"Origin": "https://evil.example"})
+          assert status == 200 and json.loads(body) is None, body
+          assert not any(k.lower() == "access-control-allow-origin" for k in headers), headers
+          assert call("POST", "/api/workspace/open", {"path": "/"})[0] == 400
+          print("smoke ok")
+          PY
+          docker logs smoke 2>&1 | tail -20
+          docker rm -f smoke
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Push image
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: docker push "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}"
