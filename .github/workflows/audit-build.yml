@@ -16,6 +16,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -41,20 +44,20 @@ jobs:
 
       - name: Build image
         env:
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          REGISTRY: ghcr.io/sebastiaanboon
         run: |
           docker build \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
-            -t "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}" .
+            -t "$REGISTRY/soverdata:${{ github.sha }}" .
 
       # No network: only startup, the SPA, an empty workspace state and the
       # security fixes. Requests that would execute anything are not sent.
       - name: Smoke test container
         env:
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          REGISTRY: ghcr.io/sebastiaanboon
         run: |
-          docker run -d --name smoke --network none "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}"
+          docker run -d --name smoke --network none "$REGISTRY/soverdata:${{ github.sha }}"
           docker exec -i smoke python - <<'PY'
           import json, time, urllib.request, urllib.error
 
@@ -89,14 +92,14 @@ jobs:
           docker logs smoke 2>&1 | tail -20
           docker rm -f smoke
 
-      - name: Log in to ACR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image
         env:
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-        run: docker push "$ACR_LOGIN_SERVER/soverdata:${{ github.sha }}"
+          REGISTRY: ghcr.io/sebastiaanboon
+        run: docker push "$REGISTRY/soverdata:${{ github.sha }}"
