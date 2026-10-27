@@ -35,6 +35,9 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+      <p style={{ marginTop: 'auto', padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <a href="https://cafeboon.com" style={{ color: 'inherit' }}>a Cafe Boon company</a>
+      </p>
     </aside>
   )
 }
