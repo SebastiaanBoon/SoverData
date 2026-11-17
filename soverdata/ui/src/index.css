@@ -1976,3 +1976,12 @@ tbody tr:hover { background: var(--bg-3); }
     max-width: 100%;
   }
 }
+
+/* small trust badge in the sidebar footer, only for credentials that have really been obtained */
+.trust-mini { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.trust-mini a { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 10px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-muted); text-decoration: none; transition: border-color .2s, color .2s; }
+.trust-mini a:hover { border-color: var(--text-muted); color: var(--text); }
+.trust-mini svg { width: 22px; height: 22px; flex: none; }
+.trust-mini span { display: flex; flex-direction: column; line-height: 1.25; }
+.trust-mini strong { font-size: 0.86rem; font-weight: 600; color: var(--text); }
+.trust-mini small { font-size: 0.74rem; }
