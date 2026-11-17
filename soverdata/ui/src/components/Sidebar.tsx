@@ -47,7 +47,14 @@ export function Sidebar() {
             </svg>
             <span><strong>CSA STAR Level 1</strong><small>Cafe Boon, Cloud Security Alliance registry</small></span>
           </a>
-          {/* Een volgende kaart, bijvoorbeeld Microsoft Verified Publisher, komt hier zodra die echt is behaald. */}
+          <a href="https://learn.microsoft.com/en-us/entra/identity-platform/publisher-verification-overview" target="_blank" rel="noopener noreferrer">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6l-8-3Z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            <span><strong>Microsoft Verified Publisher</strong><small>Cafe Boon, verified by Microsoft</small></span>
+          </a>
+          {/* Een volgende kaart komt hier zodra die echt is behaald. */}
         </div>
       </div>
     </aside>
